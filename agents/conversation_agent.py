@@ -14,7 +14,7 @@ import json
 import asyncio
 from typing import Any, Optional
 
-from agents.base_agent import BaseAgent, AgentResponse
+from agents.base_agent import BaseAgent, AgentResponse, AgentMessage
 
 
 class ConversationAgent(BaseAgent):
