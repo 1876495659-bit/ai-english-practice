@@ -41,10 +41,11 @@ async def test_langgraph_flow() -> None:
         "messages": [],
     }
 
-    result = graph.invoke(initial_state)
+    result = await graph.ainvoke(initial_state)
 
     messages = result.get("messages", [])
-    opening = messages[-1]["content"] if messages else ""
+    # LangGraph stores messages as dict-compatible objects
+    opening = messages[-1].content if messages else ""
     print(f"  场景: {result['scenario']} ({result['metadata'].get('scenario_name', '')})")
     print(f"  难度: {result['difficulty']} ({result['metadata'].get('difficulty_description', '')})")
     print(f"  开场白: {opening[:80]}...")
@@ -56,14 +57,19 @@ async def test_langgraph_flow() -> None:
 
     state_2 = dict(result)
     state_2["turn"] = 1
-    state_2["messages"] = list(messages)
+    # Convert LangGraph messages to plain dicts with role/content for next invocation
+    state_2["messages"] = [
+        {"role": "assistant", "content": m.content} if hasattr(m, "content") else m
+        for m in messages
+    ]
     state_2["messages"].append({"role": "user", "content": "Hi, nice to meet you!"})
 
-    result_2 = graph.invoke(state_2)
+    result_2 = await graph.ainvoke(state_2)
     ai_reply = ""
     for msg in reversed(result_2.get("messages", [])):
-        if isinstance(msg, dict) and msg.get("role") == "assistant":
-            ai_reply = msg.get("content", "")
+        content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else "")
+        if content:
+            ai_reply = content
             break
 
     print(f"  用户: Hi, nice to meet you!")
@@ -78,10 +84,14 @@ async def test_langgraph_flow() -> None:
 
     state_3 = dict(result_2)
     state_3["turn"] = 2
-    state_3["messages"] = list(result_2.get("messages", []))
+    messages_3 = result_2.get("messages", [])
+    state_3["messages"] = [
+        {"role": "assistant", "content": m.content} if hasattr(m, "content") else m
+        for m in messages_3
+    ]
     state_3["messages"].append({"role": "user", "content": "I love watching movies"})
 
-    result_3 = graph.invoke(state_3)
+    result_3 = await graph.ainvoke(state_3)
     print(f"  用户: I love watching movies")
     print(f"  评分总分: {result_3.get('score', {}).get('total', 0)}/10")
 

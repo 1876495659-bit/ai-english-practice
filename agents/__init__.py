@@ -15,7 +15,12 @@ from agents.scenario_node import scenario_node
 from agents.conversation_node import conversation_node
 from agents.correction_node import correction_node
 from agents.scoring_node import scoring_node
-from agents.state import EnglishTutorState
+from agents.state import (
+    EnglishTutorState,
+    CorrectionResult,
+    ScoreResult,
+    ErrorItem,
+)
 from agents.graph_builder import build_graph, get_graph, reset_graph
 from agents.scenarios import SCENARIOS, get_scenario_config, list_available_scenarios
 
@@ -25,6 +30,9 @@ __all__ = [
     "correction_node",
     "scoring_node",
     "EnglishTutorState",
+    "CorrectionResult",
+    "ScoreResult",
+    "ErrorItem",
     "build_graph",
     "get_graph",
     "reset_graph",

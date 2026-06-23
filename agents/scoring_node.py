@@ -34,13 +34,19 @@ async def scoring_node(state: dict[str, Any]) -> dict[str, Any]:
     Returns:
         State 增量更新 dict
     """
-    # 从 messages 中提取用户最新输入
-    messages: list[dict] = state.get("messages", [])
+    # 从 messages 中提取用户最新输入（兼容 dict 和 LangGraph BaseMessage）
+    messages: list = state.get("messages", [])
     user_input = ""
     for msg in reversed(messages):
-        if isinstance(msg, dict) and msg.get("role") == "user":
-            user_input = msg.get("content", "")
-            break
+        if isinstance(msg, dict):
+            if msg.get("role") == "user":
+                user_input = msg.get("content", "").strip()
+                break
+        else:
+            role = getattr(msg, "type", None) or getattr(msg, "_getType", lambda: "")()
+            if role == "human":
+                user_input = getattr(msg, "content", "").strip()
+                break
 
     if not user_input:
         return {

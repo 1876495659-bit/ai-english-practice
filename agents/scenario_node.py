@@ -49,8 +49,9 @@ async def scenario_node(state: dict[str, Any]) -> dict[str, Any]:
         "scenario_goal": scenario_config["goal"],
     }
 
-    # 首轮：生成开场白
-    if state.get("turn", 0) == 0:
+    # 首轮：生成开场白（turn == 0 表示新会话）
+    turn = state.get("turn", 0)
+    if turn == 0:
         opening_lines = scenario_config["opening_lines"]
         opening_line = opening_lines[0]
 

@@ -42,6 +42,8 @@ User Input → State → [scenario → conversation → correction → scoring] 
 - 新增 Node（只需在 State + graph 中注册）
 - 新增场景（只需在 `scenarios.py` 添加配置）
 - 替换 LLM provider（config/providers.py 工厂模式）
+### 6. 上传
+  上传commits并同步到github上
 
 ---
 
@@ -73,6 +75,8 @@ User Input → State → [scenario → conversation → correction → scoring] 
 - 纯 StateGraph 多Agent系统
 - Node 隔离 + State 驱动
 - FastAPI RESTful API
+- TypedDict 结构化 State（CorrectionResult / ScoreResult / ErrorItem）
+- State 包含 turn, level 等会话控制字段
 
 ---
 

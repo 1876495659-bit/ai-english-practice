@@ -148,10 +148,11 @@ async def start_session(request: StartSessionRequest) -> dict[str, Any]:
     state["messages"] = []
     state["correction"] = {}
     state["score"] = {}
+    state["ai_reply"] = ""
 
     # 运行图（从 scenario node 开始）
     graph = get_graph()
-    final_state = graph.invoke(state)
+    final_state = await graph.ainvoke(state)
 
     # 提取最后一条 AI 消息作为开场白
     messages = final_state.get("messages", [])
@@ -196,7 +197,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     # 运行图
     graph = get_graph()
-    final_state = graph.invoke(state)
+    final_state = await graph.ainvoke(state)
 
     # 提取最后一条 AI 回复
     messages = final_state.get("messages", [])
