@@ -1,33 +1,11 @@
 """
-Scenario Agent - 场景控制 Agent
+场景配置数据 - 所有练习场景的 JSON 驱动配置
 
-职责：
-1. 管理所有练习场景的配置（JSON 驱动）
-2. 根据用户选择切换场景
-3. 提供场景开场白和对话引导
-4. 动态调整对话难度
-
-场景配置结构：
-{
-    "id": "interview",
-    "name": "英语面试",
-    "roles": [...],
-    "goals": [...],
-    "difficulty_levels": {"easy": ..., "medium": ..., "hard": ...}
-}
+此模块是纯数据层，不包含任何业务逻辑。
+新增场景只需在此添加配置字典即可。
 """
 
-import json
-import os
-import asyncio
-from typing import Any, Optional
-
-from agents.base_agent import BaseAgent, AgentResponse, MessageContext, AgentMessage
-
-
-# ============================================================================
-# 场景配置数据（JSON 驱动，可扩展）
-# ============================================================================
+from typing import Any
 
 SCENARIOS: dict[str, dict[str, Any]] = {
     "interview": {
@@ -193,148 +171,41 @@ SCENARIOS: dict[str, dict[str, Any]] = {
 }
 
 
-class ScenarioAgent(BaseAgent):
-    """场景控制 Agent - 管理练习场景的配置和初始化"""
+def get_scenario_config(scenario_id: str) -> dict[str, Any]:
+    """
+    获取场景配置（带默认回退）
 
-    @property
-    def name(self) -> str:
-        return "scenario"
+    Args:
+        scenario_id: 场景标识
 
-    def _build_system_prompt(self, ctx: MessageContext) -> str:
-        """根据场景配置构建系统提示词"""
-        template = self._load_prompt_template("scenario")
-        scenario_config = SCENARIOS.get(ctx.scenario, SCENARIOS["daily"])
-        diff_config = scenario_config["difficulty_levels"].get(
-            ctx.difficulty, scenario_config["difficulty_levels"]["medium"]
-        )
+    Returns:
+        场景配置字典
+    """
+    return SCENARIOS.get(scenario_id, SCENARIOS["daily"])
 
-        base_prompt = template if template else ""
 
-        return (
-            f"{base_prompt}\n\n"
-            f"=== 当前场景配置 ===\n"
-            f"场景ID: {scenario_config['id']}\n"
-            f"场景名称: {scenario_config['name']}\n"
-            f"场景目标: {scenario_config['goal']}\n"
-            f"难度等级: {diff_config['description']} ({ctx.difficulty})\n"
-            f"重点练习: {diff_config['focus']}\n"
-            f"语言要求: {diff_config['prompt_suffix']}\n"
-            f"用户水平: {ctx.level}\n"
-            f"对话轮次: {ctx.turn}"
-        )
+def get_difficulty_config(scenario_id: str, difficulty: str) -> dict[str, Any]:
+    """
+    获取场景+难度的配置
 
-    async def _call_llm(self, messages: list[dict], ctx: MessageContext) -> str:
-        """
-        Mock LLM 调用 - 生成场景开场白
+    Args:
+        scenario_id: 场景标识
+        difficulty: 难度等级
 
-        实际使用时替换为真实 LLM 调用。
-        """
-        await asyncio.sleep(0.3)
+    Returns:
+        难度配置字典
+    """
+    scenario_config = get_scenario_config(scenario_id)
+    return scenario_config["difficulty_levels"].get(
+        difficulty, scenario_config["difficulty_levels"]["medium"]
+    )
 
-        scenario_config = SCENARIOS.get(ctx.scenario, SCENARIOS["daily"])
-        opening_lines = scenario_config["opening_lines"]
 
-        # 根据轮次选择开场白
-        if ctx.turn <= 1:
-            # 首次：使用开场白
-            line = opening_lines[ctx.turn % len(opening_lines)]
-            return line
-        else:
-            # 后续轮次：根据场景生成自然回复
-            replies = {
-                "interview": [
-                    "That's impressive! Can you tell me more about a specific project you're proud of?",
-                    "Great answer. What would you say is your greatest professional strength?",
-                    "Interesting. How do you handle pressure and tight deadlines?",
-                ],
-                "restaurant": [
-                    "Excellent choice! Would you like to start with an appetizer or salad?",
-                    "Sure thing! Anything to drink? We have a special today.",
-                    "Perfect! Should I put that in for you right away?",
-                ],
-                "travel": [
-                    "Oh, that's a great area to explore! Would you like a map or directions?",
-                    "Absolutely, it's just a short walk from here. Turn left at the traffic light.",
-                    "That's one of our most popular spots! You won't regret it.",
-                ],
-                "meeting": [
-                    "Thanks for the update. Does anyone have additional thoughts on this approach?",
-                    "Good point. Let's make sure we align on the timeline before moving forward.",
-                    "Agreed. Let's schedule a follow-up to discuss the details further.",
-                ],
-                "daily": [
-                    "That sounds fun! What else do you like to do in your free time?",
-                    "Really? I've always wanted to try that. How did you get into it?",
-                    "Haha, that's a great story! What happened next?",
-                ],
-            }
-            scenario_replies = replies.get(ctx.scenario, replies["daily"])
-            idx = (ctx.turn - 2) % len(scenario_replies)
-            return scenario_replies[idx]
+def list_available_scenarios() -> list[str]:
+    """
+    列出所有可用场景标识
 
-    async def initialize_scenario(
-        self,
-        scenario_id: str,
-        difficulty: str = "medium",
-        level: str = "intermediate",
-    ) -> MessageContext:
-        """
-        初始化一个新场景
-
-        Args:
-            scenario_id: 场景标识 (interview/restaurant/travel/meeting/daily)
-            difficulty: 难度等级 (easy/medium/hard)
-            level: 用户水平
-
-        Returns:
-            初始化后的 MessageContext
-        """
-        if scenario_id not in SCENARIOS:
-            raise ValueError(
-                f"Unknown scenario '{scenario_id}'. "
-                f"Available: {list(SCENARIOS.keys())}"
-            )
-
-        scenario_config = SCENARIOS[scenario_id]
-        diff_config = scenario_config["difficulty_levels"].get(
-            difficulty, scenario_config["difficulty_levels"]["medium"]
-        )
-
-        ctx = MessageContext(
-            scenario=scenario_id,
-            difficulty=difficulty,
-            level=level,
-            scenario_goal=scenario_config["goal"],
-            metadata={
-                "scenario_name": scenario_config["name"],
-                "scenario_description": scenario_config["description"],
-                "roles": scenario_config["roles"],
-                "difficulty_description": diff_config["description"],
-                "focus": diff_config["focus"],
-            },
-        )
-
-        # 调用 LLM 获取开场白
-        response_content = await self._call_llm([], ctx)
-
-        # 将开场白放入对话历史
-        ctx.conversation_history.append(
-            {"role": "assistant", "content": response_content}
-        )
-        ctx.metadata["opening_line"] = response_content
-
-        print(
-            f"[ScenarioAgent] Initialized: {scenario_config['name']} "
-            f"({diff_config['description']})"
-        )
-
-        return ctx
-
-    async def process(self, ctx: MessageContext) -> MessageContext:
-        """process 方法用于获取场景开场白"""
-        response_content = await self._call_llm([], ctx)
-        ctx.conversation_history.append(
-            {"role": "assistant", "content": response_content}
-        )
-        ctx.metadata["opening_line"] = response_content
-        return ctx
+    Returns:
+        场景标识列表
+    """
+    return list(SCENARIOS.keys())
