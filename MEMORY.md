@@ -81,8 +81,8 @@ User Input → State → [scenario → conversation → correction → scoring] 
 - ✅ Prompt 文件抽取（`prompts_loader.py` + 3 个模板文件已接入 Node）
 - ✅ 单元测试覆盖（29/29 通过 — 规则引擎、评分算法、场景配置）
 - ✅ Python 3.14 兼容性修复
-- 📝 待优化：评分归零问题（LangGraph 1.x messages reducer 兼容性）
-- 📝 待优化：SQLite Checkpointer 初始化方式（当前回退到 MemorySaver）
+- ✅ LangGraph 1.x 兼容修复（`_extract_latest_user_input` 处理 BaseMessage）
+- 📝 待优化：评分归零问题（LangGraph 1.x `add_messages` reducer 在图管道中的行为差异 — 直接 Node 调用正常，图管道中 scoring 节点可能未被触发）
 
 ---
 
