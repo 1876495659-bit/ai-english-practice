@@ -7,7 +7,7 @@ LangGraph 架构测试 - 验证完整的自适应学习流程（Stage 5）
 """
 
 import asyncio
-from agents.graph_builder import get_graph
+from agents.graph_builder import get_graph, reset_checkpointer
 from agents.state import EnglishTutorState
 
 
@@ -17,11 +17,16 @@ async def test_langgraph_flow() -> None:
     print("AI英语口语陪练系统 - LangGraph 流程验证测试（Stage 5）")
     print("=" * 60)
 
+    # 清理旧状态
+    reset_checkpointer()
+
     # 构建图
     graph = get_graph()
     print(f"\n[OK] LangGraph 构建完成")
     print(f"[OK] 节点: scenario → conversation → correction → scoring → END")
     print(f"[OK] 条件路由: scoring_node 通过 Command 控制（低分→conversation / 高分→END）")
+
+    config = {"configurable": {"thread_id": "test_thread_001"}}
 
     # 第1步：启动会话（turn=0，Scenario Node 生成开场白）
     print("\n" + "-" * 60)
@@ -52,7 +57,7 @@ async def test_langgraph_flow() -> None:
         },
     }
 
-    result = await graph.ainvoke(initial_state)
+    result = await graph.ainvoke(initial_state, config=config)
 
     messages = result.get("messages", [])
     opening = messages[-1].content if hasattr(messages[-1], "content") else messages[-1]["content"]
@@ -74,7 +79,7 @@ async def test_langgraph_flow() -> None:
     # 故意输入简短、语法差的句子
     state_2["messages"].append({"role": "user", "content": "i go park yesterday"})
 
-    result_2 = await graph.ainvoke(state_2)
+    result_2 = await graph.ainvoke(state_2, config=config)
     ai_reply = ""
     for msg in reversed(result_2.get("messages", [])):
         content = getattr(msg, "content", None) or (msg.get("content") if isinstance(msg, dict) else "")
@@ -111,7 +116,7 @@ async def test_langgraph_flow() -> None:
         "content": "I would like to visit the museum this weekend, although I am not sure about the opening hours."
     })
 
-    result_3 = await graph.ainvoke(state_3)
+    result_3 = await graph.ainvoke(state_3, config=config)
     score_3 = result_3.get("score", {})
     scores_3 = score_3.get("scores", {})
     total_3 = score_3.get("total", 0)

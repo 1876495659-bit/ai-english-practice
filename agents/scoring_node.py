@@ -31,6 +31,7 @@ import random
 from typing import Any
 
 from agents.llm_client import call_llm_json
+from agents.prompts_loader import load_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -184,6 +185,24 @@ def _empty_return(state: dict[str, Any]) -> dict[str, Any]:
 
 
 # ============================================================================
+# LLM 评分通道
+# ============================================================================
+
+
+async def _llm_evaluate(user_input: str) -> dict[str, Any] | None:
+    """使用 LLM 进行智能评分，从 prompts/scoring.txt 加载模板。"""
+    try:
+        prompt = load_prompt("scoring", user_input=user_input)
+        result = await call_llm_json([
+            {"role": "user", "content": prompt},
+        ], temperature=0.3, max_tokens=512)
+        return result
+    except (json.JSONDecodeError, KeyError, Exception) as e:
+        logger.warning(f"[ScoringNode] LLM JSON parse failed: {e}")
+        return None
+
+
+# ============================================================================
 # 规则引擎评分通道
 # ============================================================================
 
@@ -282,38 +301,6 @@ def _generate_feedback(
 
 
 # ============================================================================
-# LLM 评分通道
-# ============================================================================
-
-
-async def _llm_evaluate(user_input: str) -> dict[str, Any]:
-    """
-    使用 LLM 进行智能评分
-    """
-    prompt = (
-        f"Evaluate this English sentence from a Chinese learner and provide structured scores.\n\n"
-        f"User input: \"{user_input}\"\n\n"
-        "Return ONLY a valid JSON object:\n"
-        "- scores: {{'fluency': 0-10, 'grammar': 0-10, 'vocabulary': 0-10, 'naturalness': 0-10}}\n"
-        "- total: average of 4 scores (0-10)\n"
-        "- feedback_en: 1-2 sentence English summary\n"
-        "- feedback_zh: 1-2 sentence Chinese summary\n"
-        "- strengths: array of 1-2 strengths in Chinese\n"
-        "- improvements: array of 1-2 suggestions in Chinese\n"
-        "Raw JSON only, no markdown fences."
-    )
-
-    try:
-        result = await call_llm_json([
-            {"role": "user", "content": prompt},
-        ], temperature=0.3, max_tokens=512)
-        return result
-    except (json.JSONDecodeError, KeyError, Exception) as e:
-        logger.warning(f"[ScoringNode] LLM JSON parse failed: {e}")
-        return None
-
-
-# ============================================================================
 # Stage 5: Skill Progress 追踪
 # ============================================================================
 
@@ -321,35 +308,28 @@ async def _llm_evaluate(user_input: str) -> dict[str, Any]:
 def _update_skill_progress(
     state: dict[str, Any], score_data: dict[str, Any] | None
 ) -> dict[str, Any]:
-    """
-    更新用户能力追踪数据
-    """
+    """更新用户能力追踪数据"""
     existing_progress: dict[str, Any] = state.get("skill_progress", {})
     scores = state.get("score", {}).get("scores", {}) if state.get("score") else {}
     correction = state.get("correction", {})
 
-    # 累计轮次
     total_turns = existing_progress.get("total_turns", 0) + 1
 
-    # 累计错误频率
     error_freq: dict[str, int] = dict(existing_progress.get("error_frequency", {}))
     if correction and correction.get("errors"):
         for err in correction["errors"]:
             etype = err.get("type", "unknown")
             error_freq[etype] = error_freq.get(etype, 0) + 1
 
-    # 获取历史轨迹
     trajectory: list[float] = list(existing_progress.get("improvement_trajectory", []))
     if score_data:
         trajectory.append(score_data.get("total", 0))
 
-    # 计算新的平均分
     if trajectory:
         avg_score = round(sum(trajectory) / len(trajectory), 1)
     else:
         avg_score = 0.0
 
-    # 找出最强和最弱维度
     dim_scores = {k: v for k, v in scores.items()} if scores else {}
     strongest = max(dim_scores, key=dim_scores.get) if dim_scores else ""
     weakest = min(dim_scores, key=dim_scores.get) if dim_scores else ""

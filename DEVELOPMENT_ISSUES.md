@@ -34,21 +34,38 @@
 
 ---
 
+## 问题 4：Python 3.14 兼容性 ✅ 已修复
+
+### 修复方案
+- `requirements.txt` 改用 `>=` 灵活版本约束，避免 pydantic-core 编译失败
+- `starlette` 降级到 0.40.x 兼容 streamlit 1.44
+- streamlit 锁定 `>=1.39,<1.45` 避免与新版 starlette 冲突
+
+---
+
+## 问题 5：Prompt 文件与实际使用不一致 ✅ 已修复
+
+### 修复方案
+- 创建 `agents/prompts_loader.py` 统一模板加载器
+- 更新 `prompts/conversation.txt`、`prompts/correction.txt`、`prompts/scoring.txt` 为真实使用的模板
+- `conversation_node`、`correction_node`、`scoring_node` 改用 `load_prompt()` 从文件加载 prompt
+- 符合 MEMORY.md 规则 #4：Prompt 与代码分离
+
+---
+
 ## 待办事项
 
-### 1. Prompt 文件与实际使用不一致
-- `prompts/*.txt` 文件定义了结构化 prompt 模板，但各 Node 实际使用内嵌字符串
-- **建议**：将 Node 中的内嵌 prompt 抽取到 `prompts/` 目录的文件中，通过 `open().read()` 加载
-- **优先级**：中（符合 MEMORY.md 规则 #4）
+### 1. 评分归零问题（LangGraph 1.x messages reducer 兼容性）
+- **现象**：Step 2/3 评分显示 0，因为 `_extract_latest_user_input` 从 `add_messages` reducer 管理的 messages 中提取不到 user 消息
+- **原因**：LangGraph 1.x 的 `add_messages` reducer 改变了消息存储格式
+- **优先级**：低（规则引擎评分仍正常工作，仅 LLM 通道受影响）
+- **方案**：在 scoring_node 中增加对 `add_messages` reducer 格式的兼容处理
 
-### 2. 缺少 .env 示例文件
-- 新用户不知道如何配置 API Key
-- **已添加** `.env.example` 文件
+### 2. Pydantic config 类写法弃用警告
+- `config/settings.py` 使用 `class Config` 而非 `ConfigDict`
+- **方案**：后续升级到 `model_config = ConfigDict(env_file=".env")`
 
-### 3. README.md 过时
-- README 仍显示 Orchestrator 架构和旧开发计划
-- **建议**：重写为 LangGraph StateGraph 架构文档
-
-### 4. 测试覆盖率不足
-- 只有 `test_langgraph_flow.py` 一个集成测试
-- **建议**：添加单元测试（规则引擎、评分算法、场景配置等）
+### 3. SQLite Checkpointer 初始化失败
+- `langgraph-checkpoint-sqlite` 3.x 的 `from_conn_string` 返回 async context manager
+- 当前 `graph_builder.py` 用 `__enter__()` 同步进入，不兼容
+- **方案**：改用 MemorySaver（当前已自动回退），或升级 checkpointer 初始化方式

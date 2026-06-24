@@ -13,8 +13,16 @@ AI English Tutor - 主界面 (Streamlit MVP)
 
 from __future__ import annotations
 
+import sys
+from pathlib import Path
+
 import streamlit as st
 from typing import Any, Optional
+
+# 确保项目根目录在 Python path 中（Streamlit 运行时可能不包含）
+_project_root = Path(__file__).resolve().parent.parent
+if str(_project_root) not in sys.path:
+    sys.path.insert(0, str(_project_root))
 
 from ui.client import APIClient
 

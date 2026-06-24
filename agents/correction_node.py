@@ -23,7 +23,8 @@ import logging
 import re
 from typing import Any
 
-from agents.llm_client import call_llm_json, safe_llm_call
+from agents.llm_client import call_llm_json
+from agents.prompts_loader import load_prompt
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -203,10 +204,9 @@ async def correction_node(state: dict[str, Any]) -> dict[str, Any]:
     turn: int = state.get("turn", 1)
 
     # 检查是否启用 LLM 纠错
-    use_llm = settings.llm_mode_correction if hasattr(settings, "llm_mode_correction") else False
+    use_llm = getattr(settings, "llm_mode_correction", False)
 
     if use_llm:
-        # LLM 纠错通道
         correction = await _llm_correction(
             user_input=user_input,
             scenario=scenario,
@@ -261,6 +261,35 @@ def _empty_correction(reason: str = "") -> dict[str, Any]:
 
 
 # ============================================================================
+# LLM 纠错通道
+# ============================================================================
+
+
+async def _llm_correction(
+    user_input: str,
+    scenario: str,
+    level: str,
+) -> dict[str, Any] | None:
+    """
+    使用 LLM 进行智能纠错，从 prompts/correction.txt 加载模板。
+    """
+    try:
+        prompt = load_prompt(
+            "correction",
+            user_input=user_input,
+            scenario=scenario,
+            level=level,
+        )
+        result = await call_llm_json([
+            {"role": "user", "content": prompt},
+        ], temperature=0.3, max_tokens=512)
+        return result
+    except (json.JSONDecodeError, KeyError, Exception) as e:
+        logger.warning(f"[CorrectionNode] LLM JSON parse failed: {e}")
+        return None
+
+
+# ============================================================================
 # 规则引擎通道
 # ============================================================================
 
@@ -279,28 +308,24 @@ async def _rule_engine_correction(
     suggestion = user_input
     polished = user_input
 
-    # Level 1: 基础语法
     for err in _check_basic_grammar(user_input):
         errors.append(err["error"])
         error_details.append(err["detail"])
         corrected = _apply_fix(corrected, err["pattern"], err["replacement"])
         suggestion = corrected
 
-    # Level 2: 语法结构
     for err in _check_grammar_structure(user_input):
         errors.append(err["error"])
         error_details.append(err["detail"])
         corrected = _apply_fix(corrected, err["pattern"], err["replacement"])
         suggestion = corrected
 
-    # Level 3: 中式英语
     for err in _check_chinglish(user_input):
         errors.append(err["error"])
         error_details.append(err["detail"])
         corrected = _apply_fix(corrected, err["pattern"], err["replacement"])
         suggestion = corrected
 
-    # Level 4: 表达升级
     polish_level = _determine_polish_level(level, difficulty, scenario)
     if polish_level != "basic":
         polished = _apply_polish(suggestion, polish_level)
@@ -324,57 +349,7 @@ async def _rule_engine_correction(
 
 
 # ============================================================================
-# LLM 纠错通道
-# ============================================================================
-
-
-async def _llm_correction(
-    user_input: str,
-    scenario: str,
-    level: str,
-) -> dict[str, Any]:
-    """
-    使用 LLM 进行智能纠错
-
-    返回结构化 JSON：
-    {
-        "original": "...",
-        "errors": [...],
-        "corrected": "...",
-        "suggestion": "...",
-        "explanation": "...",
-        "has_errors": true/false,
-        "polish_level": "basic|enhanced|advanced"
-    }
-    """
-    prompt = (
-        f"Analyze the following English sentence from a Chinese learner and provide structured correction.\n\n"
-        f"User input: \"{user_input}\"\n"
-        f"Scenario: {scenario}\n"
-        f"Level: {level}\n\n"
-        "Return ONLY a valid JSON object with these fields:\n"
-        "- original: the original text\n"
-        "- errors: array of {{'type': 'grammar'|'vocabulary'|'style'|'punctuation', 'issue': 'description in Chinese'}}\n"
-        "- corrected: the grammatically corrected version\n"
-        "- suggestion: a more natural/native expression\n"
-        "- explanation: explanation in Chinese\n"
-        "- has_errors: boolean\n"
-        "- polish_level: 'basic', 'enhanced', or 'advanced'\n"
-        "Do NOT include markdown code fences. Return raw JSON only."
-    )
-
-    try:
-        result = await call_llm_json([
-            {"role": "user", "content": prompt},
-        ], temperature=0.3, max_tokens=512)
-        return result
-    except (json.JSONDecodeError, KeyError, Exception) as e:
-        logger.warning(f"[CorrectionNode] LLM JSON parse failed: {e}")
-        return None  # Triggers fallback to rule engine
-
-
-# ============================================================================
-# 规则引擎实现（复用之前的逻辑）
+# 规则引擎实现
 # ============================================================================
 
 

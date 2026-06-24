@@ -17,13 +17,9 @@ import logging
 from typing import Any
 
 from agents.llm_client import call_llm
-from agents.scenarios import get_scenario_config
+from agents.prompts_loader import load_prompt
 
 logger = logging.getLogger(__name__)
-
-# ============================================================================
-# Node 入口
-# ============================================================================
 
 
 async def conversation_node(state: dict[str, Any]) -> dict[str, Any]:
@@ -52,13 +48,14 @@ async def conversation_node(state: dict[str, Any]) -> dict[str, Any]:
     # 构建用户消息历史（排除 system 角色）
     user_history = _build_conversation_history(messages)
 
-    # 构建系统提示
-    system_prompt = _build_system_prompt(
+    # 从模板文件加载 prompt
+    system_prompt = load_prompt(
+        "conversation",
         scenario_name=scenario_name,
         scenario_id=scenario,
         difficulty=diff_desc,
         level=level,
-        turn=turn,
+        turn=str(turn),
         scenario_goal=scenario_goal,
     )
 
@@ -89,7 +86,6 @@ def _build_conversation_history(messages: list) -> list[dict[str, str]]:
     兼容 dict 和 BaseMessage 格式。
     """
     history: list[dict[str, str]] = []
-    # 取最近 12 条消息（约 6 轮对话）
     recent = messages[-12:] if len(messages) > 12 else messages
 
     for msg in recent:
@@ -100,7 +96,6 @@ def _build_conversation_history(messages: list) -> list[dict[str, str]]:
             role = getattr(msg, "type", None) or getattr(msg, "_getType", lambda: "")()
             content = getattr(msg, "content", "")
 
-        # Map LangGraph role names to standard names
         if role == "human":
             role = "user"
         elif role == "ai":
@@ -110,37 +105,6 @@ def _build_conversation_history(messages: list) -> list[dict[str, str]]:
             history.append({"role": role, "content": content})
 
     return history
-
-
-def _build_system_prompt(
-    scenario_name: str,
-    scenario_id: str,
-    difficulty: str,
-    level: str,
-    turn: int,
-    scenario_goal: str,
-) -> str:
-    """构建对话生成的系统提示词"""
-    return (
-        f"You are an AI English conversation partner in the {scenario_name} ({scenario_id}) scenario.\n\n"
-        f"## Your Role\n"
-        f"Professional English speaking practice assistant helping Chinese learners improve their oral English.\n\n"
-        f"## Context\n"
-        f"- Difficulty: {difficulty}\n"
-        f"- User Level: {level}\n"
-        f"- Turn: {turn}\n"
-        f"- Goal: {scenario_goal}\n\n"
-        f"## Rules\n"
-        f"1. Each reply should be 2-4 sentences, giving the user room to respond\n"
-        f"2. Use vocabulary and sentence structures appropriate for the user's level\n"
-        f"3. Keep the conversation coherent and natural\n"
-        f"4. Always provide a Chinese translation in parentheses after your English response\n"
-        f"5. Stay in character for the {scenario_name} scenario\n"
-        f"6. Ask follow-up questions to encourage the user to speak more\n\n"
-        f"## Output Format\n"
-        f"[English response] （中文翻译）\n\n"
-        f"Remember: Be encouraging, patient, and help the learner build confidence."
-    )
 
 
 async def _generate_reply(
@@ -154,7 +118,6 @@ async def _generate_reply(
 
     优先使用真实 LLM（需 llm_enabled=True），失败时回退到 mock。
     """
-    # 检查是否启用了 LLM
     try:
         from config.settings import settings
         if not getattr(settings, "llm_enabled", False):
@@ -162,7 +125,6 @@ async def _generate_reply(
     except Exception:
         pass
 
-    # 尝试 LLM
     try:
         llm_messages = [
             {"role": "system", "content": system_prompt},
@@ -178,7 +140,6 @@ async def _generate_reply(
     except Exception as e:
         logger.warning(f"[ConversationNode] LLM call failed, falling back to mock: {e}")
 
-    # Mock fallback
     return _mock_reply(scenario, turn)
 
 

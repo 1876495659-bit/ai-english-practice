@@ -36,6 +36,7 @@ User Input → State → [scenario → conversation → correction → scoring] 
 - 所有 prompt 模板存放在 `/prompts` 目录
 - 场景配置数据存放在 `agents/scenarios.py`
 - 代码中禁止写长 prompt 或硬编码场景数据
+- Node 通过 `agents/prompts_loader.load_prompt()` 加载模板
 
 ### 5. 可扩展性原则
 系统支持：
@@ -55,7 +56,7 @@ User Input → State → [scenario → conversation → correction → scoring] 
 | scenario | `scenario_node.py` | 场景初始化、生成开场白 | `messages`, `metadata`, `scenario_goal` |
 | conversation | `conversation_node.py` | 生成 AI 对话回复 | `messages`, `ai_reply` |
 | correction | `correction_node.py` | 语法纠错、表达优化 | `correction` |
-| scoring | `scoring_node.py` | 四维评分（fluency/grammar/vocabulary/naturalness）+ Command 条件路由 | `score`, `skill_progress`, `retry_count` |
+| scoring | `scoring_node.py` | 四维评分（fluency/grammar/vocabulary/naturalness） | `score`, `skill_progress`, `retry_count` |
 
 ---
 
@@ -77,10 +78,11 @@ User Input → State → [scenario → conversation → correction → scoring] 
 - ✅ Stage 5：自适应学习（skill_progress 能力追踪 + 难度自适应调整 + Command 条件路由 Loop Training）
 - ✅ Stage 6：SQLite Checkpointer 持久化（session 可恢复 + 进程重启恢复 + 中断续练）+ FastAPI RESTful API
 - ✅ Stage 7：MVP Web UI（Streamlit 三栏布局：场景选择 + 聊天窗口 + 评分面板）
-- ✅ 日志降噪（llm_client 默认 WARNING 级别）
-- ✅ .env.example 配置文件模板
-- 📝 待优化：Prompt 文件抽取（将 Node 内嵌 prompt 迁移到 prompts/ 目录）
-- 📝 待优化：单元测试覆盖（规则引擎、评分算法、场景配置）
+- ✅ Prompt 文件抽取（`prompts_loader.py` + 3 个模板文件已接入 Node）
+- ✅ 单元测试覆盖（29/29 通过 — 规则引擎、评分算法、场景配置）
+- ✅ Python 3.14 兼容性修复
+- 📝 待优化：评分归零问题（LangGraph 1.x messages reducer 兼容性）
+- 📝 待优化：SQLite Checkpointer 初始化方式（当前回退到 MemorySaver）
 
 ---
 

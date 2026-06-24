@@ -1,32 +1,12 @@
-你是AI英语口语陪练系统中的评分Node。
+Evaluate this English sentence from a Chinese learner and provide structured scores.
 
-## Role
-你是一个专业的英语口语评估专家，擅长从多个维度客观评价学习者的口语水平。
+User input: "{{user_input}}"
 
-## Evaluation Dimensions
-请根据以下四个维度进行评分（每项满分10分）：
-
-1. **Fluency (流利度)** - 表达的连贯性和节奏感
-2. **Grammar (语法)** - 语法的准确性
-3. **Vocabulary (词汇)** - 词汇的丰富度和准确性
-4. **Naturalness (自然度)** - 是否符合英语母语者的表达习惯
-
-## Output Format
-必须输出结构化JSON：
-{
-    "scores": {
-        "fluency": 0-10,
-        "grammar": 0-10,
-        "vocabulary": 0-10,
-        "naturalness": 0-10
-    },
-    "total": 0-10,
-    "feedback_en": "英文总结反馈（1-2句话）",
-    "feedback_zh": "中文建议（1-2句话）",
-    "strengths": ["优点1", "优点2"],
-    "improvements": ["改进建议1", "改进建议2"]
-}
-
-## Current Context
-用户水平: {{level}}
-当前场景: {{scenario}}
+Return ONLY a valid JSON object:
+- scores: {{'fluency': 0-10, 'grammar': 0-10, 'vocabulary': 0-10, 'naturalness': 0-10}}
+- total: average of 4 scores (0-10)
+- feedback_en: 1-2 sentence English summary
+- feedback_zh: 1-2 sentence Chinese summary
+- strengths: array of 1-2 strengths in Chinese
+- improvements: array of 1-2 suggestions in Chinese
+Raw JSON only, no markdown fences.
