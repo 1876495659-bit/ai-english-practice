@@ -72,8 +72,10 @@ async def test_langgraph_flow() -> None:
 
     state_2 = dict(result)
     state_2["turn"] = 1
+    # Convert BaseMessage objects to dict format for next invoke
     state_2["messages"] = [
-        {"role": "assistant", "content": m.content} if hasattr(m, "content") else m
+        {"role": m.type if hasattr(m, "type") else m["role"],
+         "content": m.content if hasattr(m, "content") else m["content"]}
         for m in messages
     ]
     # 故意输入简短、语法差的句子
@@ -87,16 +89,21 @@ async def test_langgraph_flow() -> None:
             ai_reply = content
             break
 
+    correction_2 = result_2.get("correction", {})
+    correction_original = correction_2.get("original", "")
     score_2 = result_2.get("score", {})
-    scores_2 = score_2.get("scores", {})
+    scores_2 = score_2.get("scores", {}) if score_2 else {}
     retry_2 = result_2.get("retry_count", 0)
     total_2 = score_2.get("total", 0)
 
     print(f"  用户: i go park yesterday")
     print(f"  AI: {ai_reply[:100]}...")
+    print(f"  纠错原始输入: {correction_original}")
     print(f"  评分: grammar={scores_2.get('grammar', 0)}, fluency={scores_2.get('fluency', 0)}")
     print(f"  总分: {total_2}/10")
     print(f"  retry_count: {retry_2}")
+
+    assert correction_original == "i go park yesterday", f"Correction should detect user input, got: {correction_original}"
 
     # 第3步：第二轮对话（高分输入，预期 END）
     print("\n" + "-" * 60)
@@ -107,7 +114,8 @@ async def test_langgraph_flow() -> None:
     state_3["turn"] = 2
     messages_3 = result_2.get("messages", [])
     state_3["messages"] = [
-        {"role": "assistant", "content": m.content} if hasattr(m, "content") else m
+        {"role": m.type if hasattr(m, "type") else m["role"],
+         "content": m.content if hasattr(m, "content") else m["content"]}
         for m in messages_3
     ]
     # 输入较长、语法较好的句子
@@ -118,7 +126,7 @@ async def test_langgraph_flow() -> None:
 
     result_3 = await graph.ainvoke(state_3, config=config)
     score_3 = result_3.get("score", {})
-    scores_3 = score_3.get("scores", {})
+    scores_3 = score_3.get("scores", {}) if score_3 else {}
     total_3 = score_3.get("total", 0)
 
     print(f"  用户: I would like to visit the museum this weekend...")

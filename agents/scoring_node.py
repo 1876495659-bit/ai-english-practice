@@ -148,15 +148,18 @@ async def scoring_node(state: dict[str, Any]) -> dict[str, Any] | Any:
 
 
 def _extract_latest_user_input(messages: list) -> str:
-    """从消息列表中提取最新的用户输入（兼容 dict 和 BaseMessage）"""
+    """从消息列表中提取最新的用户输入（兼容 dict 和 LangChain BaseMessage）"""
     for msg in reversed(messages):
         if isinstance(msg, dict):
             if msg.get("role") == "user":
                 return msg.get("content", "").strip()
         else:
-            role = getattr(msg, "type", None) or getattr(msg, "_getType", lambda: "")()
+            role = getattr(msg, "type", None)
             if role == "human":
                 return getattr(msg, "content", "").strip()
+            content = getattr(msg, "content", None) or getattr(msg, "_content", None)
+            if content and role in ("human", "user"):
+                return str(content).strip()
     return ""
 
 
