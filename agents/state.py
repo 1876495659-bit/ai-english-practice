@@ -42,8 +42,10 @@ class CorrectionResult(TypedDict, total=False):
     """纠错结果结构"""
     original: str  # 用户原始输入
     errors: list[ErrorItem]  # 检测到的错误列表
+    error_details: list[dict[str, Any]]  # 错误详情（含位置信息）
     corrected: str  # 修正后的表达
     suggestion: str  # 更地道的表达建议
+    polished: str  # 高级表达版本
     explanation: str  # 错误解释（中文）
     has_errors: bool  # 是否有错误
     polish_level: str  # basic | enhanced | advanced
@@ -57,6 +59,16 @@ class ScoreResult(TypedDict, total=False):
     feedback_zh: str  # 中文反馈
     strengths: list[str]  # 优点
     improvements: list[str]  # 改进建议
+
+
+class SkillProgress(TypedDict, total=False):
+    """用户能力追踪"""
+    total_turns: int  # 总对话轮次
+    avg_score: float  # 平均评分
+    error_frequency: dict[str, int]  # 各类错误出现次数
+    weakest_dimension: str  # 最弱维度
+    strongest_dimension: str  # 最强维度
+    improvement_trajectory: list[float]  # 历史总分趋势
 
 
 # ============================================================================
@@ -75,6 +87,9 @@ class EnglishTutorState(TypedDict, total=False):
     - messages: 对话历史（由 LangGraph add_messages reducer 管理）
     - scenario/difficulty/level: 场景配置
     - turn: 当前对话轮次
+    - retry_count: 当前重试计数（用于 Loop Training）
+    - max_retries: 最大重试次数
+    - skill_progress: 用户能力追踪数据
     - ai_reply: Conversation Node 产出
     - correction: Correction Node 产出的结构化纠错结果
     - score: Scoring Node 产出的四维评分结果
@@ -93,12 +108,17 @@ class EnglishTutorState(TypedDict, total=False):
 
     # ===== 会话控制 =====
     turn: int  # 当前对话轮次（从 0 开始）
+    retry_count: int  # 当前重试计数（Loop Training）
+    max_retries: int  # 最大重试次数
     session_active: bool  # 会话是否活跃
 
     # ===== Agent 产出 =====
     ai_reply: str  # Conversation Node 生成的 AI 回复
     correction: CorrectionResult  # Correction Node 的结构化纠错结果
     score: ScoreResult  # Scoring Node 的四维评分结果
+
+    # ===== 用户能力追踪 =====
+    skill_progress: SkillProgress  # 自适应学习能力数据
 
     # ===== 元数据 =====
     metadata: dict[str, Any]  # 扩展字段 (场景名称/角色/难度描述等)

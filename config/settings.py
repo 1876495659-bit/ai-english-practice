@@ -44,6 +44,14 @@ class Settings(BaseSettings):
     # === 评分配置 ===
     scoring_max_score: float = 100.0
 
+    # === LLM 模式开关 ===
+    # 是否启用真实 LLM 调用（默认 False 使用 mock）
+    llm_enabled: bool = False
+    # 各 Node 的 LLM 开关（细粒度控制）
+    llm_mode_conversation: bool = False  # conversation node 使用 LLM
+    llm_mode_correction: bool = False    # correction node 使用 LLM 纠错
+    llm_mode_scoring: bool = False       # scoring node 使用 LLM 评分
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"

@@ -3,12 +3,18 @@ LLM Provider 配置
 
 统一管理不同 LLM 厂商的客户端初始化逻辑。
 新增 Provider 时只需在此扩展。
+
+注意：SDK 导入采用惰性加载，避免因缺失未使用的 SDK 而启动失败。
 """
 
+from __future__ import annotations
+
+import logging
 import os
+
+logger = logging.getLogger(__name__)
+
 from openai import AsyncOpenAI
-from anthropic import AsyncAnthropic
-from groq import Groq
 
 from config.settings import settings
 
@@ -21,15 +27,30 @@ def get_openai_client() -> AsyncOpenAI:
     )
 
 
-def get_anthropic_client() -> AsyncAnthropic:
-    """获取 Anthropic 客户端"""
+def get_anthropic_client():
+    """获取 Anthropic 客户端（惰性加载）"""
+    try:
+        from anthropic import AsyncAnthropic  # noqa: F811
+    except ImportError:
+        logger.warning("anthropic SDK not installed. Install with: pip install anthropic")
+        raise RuntimeError(
+            "Anthropic SDK not found. Please install it: pip install anthropic"
+        )
     return AsyncAnthropic(
         api_key=settings.anthropic_api_key or os.getenv("ANTHROPIC_API_KEY", ""),
     )
 
 
-def get_groq_client() -> Groq:
-    """获取 Groq 客户端 (支持 Qwen 等开源模型)"""
+def get_groq_client():
+    """获取 Groq 客户端（惰性加载）"""
+    try:
+        import groq  # noqa: F401
+    except ImportError:
+        logger.warning("groq SDK not installed. Install with: pip install groq")
+        raise RuntimeError(
+            "Groq SDK not found. Please install it: pip install groq"
+        )
+    from groq import Groq  # noqa: F811
     return Groq(
         api_key=settings.groq_api_key or os.getenv("GROQ_API_KEY", ""),
     )
