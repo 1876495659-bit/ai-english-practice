@@ -251,9 +251,13 @@ async def start_session(request: StartSessionRequest) -> dict[str, Any]:
     graph = get_graph()
     final_state = await graph.ainvoke(initial_state, config=config)
 
-    # 提取最后一条 AI 消息作为开场白
+    # 提取最后一条 AI 消息作为开场白（兼容 dict 和 BaseMessage）
     messages = final_state.get("messages", [])
-    opening_line = messages[-1]["content"] if messages else ""
+    if messages:
+        last_msg = messages[-1]
+        opening_line = last_msg.content if hasattr(last_msg, "content") else last_msg.get("content", "")
+    else:
+        opening_line = ""
 
     return {
         "status": "started",
@@ -333,13 +337,36 @@ async def chat(request: ChatRequest) -> ChatResponse:
     # 运行图（包含条件路由，状态自动持久化到 checkpoint）
     final_state = await graph.ainvoke(current_state, config=config)
 
-    # 提取最后一条 AI 回复
+    # 提取最后一条 AI 回复（兼容 dict 和 BaseMessage）
     messages = final_state.get("messages", [])
     ai_reply = ""
     for msg in reversed(messages):
-        if isinstance(msg, dict) and msg.get("role") == "assistant":
-            ai_reply = msg.get("content", "")
+        if isinstance(msg, dict):
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+        else:
+            role = getattr(msg, "type", None) or getattr(msg, "_getType", lambda: "")()
+            content = getattr(msg, "content", "")
+        if role in ("assistant", "ai"):
+            ai_reply = content
             break
+
+    # 序列化 messages 为 dict 格式（兼容 BaseMessage 和 dict）
+    serialized_messages = []
+    for msg in messages:
+        if isinstance(msg, dict):
+            serialized_messages.append(msg)
+        else:
+            role = getattr(msg, "type", None) or getattr(msg, "_getType", lambda: "")()
+            # Map LangGraph role names to standard names
+            if role == "human":
+                role = "user"
+            elif role == "ai":
+                role = "assistant"
+            serialized_messages.append({
+                "role": role,
+                "content": getattr(msg, "content", ""),
+            })
 
     return ChatResponse(
         session_id=session_id,
@@ -353,7 +380,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         score=final_state.get("score"),
         skill_progress=final_state.get("skill_progress"),
         retry_count=final_state.get("retry_count", 0),
-        messages=messages,
+        messages=serialized_messages,
         has_checkpoint=bool(graph.checkpointer),
     )
 
@@ -390,8 +417,14 @@ async def get_session() -> dict[str, Any]:
     messages = state.get("messages", [])
     last_ai = ""
     for msg in reversed(messages):
-        if isinstance(msg, dict) and msg.get("role") == "assistant":
-            last_ai = msg.get("content", "")[-100:]
+        if isinstance(msg, dict):
+            role = msg.get("role", "")
+            content = msg.get("content", "")
+        else:
+            role = getattr(msg, "type", None) or getattr(msg, "_getType", lambda: "")()
+            content = getattr(msg, "content", "")
+        if role in ("assistant", "ai"):
+            last_ai = str(content)[-100:]
             break
 
     return {

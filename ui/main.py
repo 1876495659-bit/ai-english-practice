@@ -1,10 +1,10 @@
 """
-AI English Tutor - 主界面 (Streamlit MVP)
+AI 英语口语陪练系统 - 主界面 (Streamlit)
 
 三栏布局：
-  左栏 (25%)：场景选择 + 难度 + 会话控制
-  中栏 (50%)：聊天窗口（对话历史）
-  右栏 (25%)：评分面板 + 学习进度
+  左侧 (22%)：场景选择 + 难度 + 会话控制
+  中间 (56%)：聊天窗口（对话历史 + 纠错 + 评分）
+  右侧 (22%)：评分面板 + 学习进度
 
 启动：
     cd ai-english-tutor
@@ -19,7 +19,7 @@ from pathlib import Path
 import streamlit as st
 from typing import Any, Optional
 
-# 确保项目根目录在 Python path 中（Streamlit 运行时可能不包含）
+# 确保项目根目录在 Python path 中
 _project_root = Path(__file__).resolve().parent.parent
 if str(_project_root) not in sys.path:
     sys.path.insert(0, str(_project_root))
@@ -31,141 +31,369 @@ from ui.client import APIClient
 # ============================================================================
 
 st.set_page_config(
-    page_title="AI English Coach",
+    page_title="AI英语口语陪练",
     page_icon="🎓",
     layout="wide",
     initial_sidebar_state="collapsed",
 )
 
 # ============================================================================
-# 常量
+# 常量定义
 # ============================================================================
 
 SCENARIOS = {
-    "daily": {"name": "日常对话", "icon": "💬"},
-    "interview": {"name": "英语面试", "icon": "💼"},
-    "restaurant": {"name": "餐厅点餐", "icon": "🍽️"},
-    "travel": {"name": "旅行出行", "icon": "✈️"},
-    "meeting": {"name": "商务会议", "icon": "🤝"},
+    "daily": {"name": "日常对话", "icon": "💬", "desc": "自由闲聊，提升流利度"},
+    "interview": {"name": "英语面试", "icon": "💼", "desc": "模拟面试，展示能力"},
+    "restaurant": {"name": "餐厅点餐", "icon": "🍽️", "desc": "点餐、询问、付款"},
+    "travel": {"name": "旅行出行", "icon": "✈️", "desc": "问路、住宿、交通"},
+    "meeting": {"name": "商务会议", "icon": "🤝", "desc": "会议讨论、发表观点"},
 }
 
-DIFFICULTIES = ["easy", "medium", "hard"]
-DIFFICULTY_LABELS = {"easy": "Beginner", "medium": "Intermediate", "hard": "Advanced"}
+DIFFICULTIES = {
+    "easy": {"label": "入门", "emoji": "🌱"},
+    "medium": {"label": "进阶", "emoji": "🌿"},
+    "hard": {"label": "精通", "emoji": "🌳"},
+}
 
-LEVELS = ["beginner", "intermediate", "advanced"]
+LEVELS = {
+    "beginner": {"label": "初级", "desc": "基础词汇，简单句型"},
+    "intermediate": {"label": "中级", "desc": "常用表达，复合句型"},
+    "advanced": {"label": "高级", "desc": "地道表达，复杂句式"},
+}
 
 DIMENSION_LABELS = {
-    "fluency": ("Fluency", "流利度"),
-    "grammar": ("Grammar", "语法"),
-    "vocabulary": ("Vocabulary", "词汇"),
-    "naturalness": ("Naturalness", "自然度"),
+    "fluency": ("流利度", "🗣️"),
+    "grammar": ("语法", "📝"),
+    "vocabulary": ("词汇", "📚"),
+    "naturalness": ("自然度", "🎭"),
+}
+
+DIMENSION_COLORS = {
+    "fluency": "#3b82f6",
+    "grammar": "#8b5cf6",
+    "vocabulary": "#f59e0b",
+    "naturalness": "#10b981",
 }
 
 # ============================================================================
-# CSS 样式
+# CSS 样式 — 专业商务风格
 # ============================================================================
 
 st.markdown("""
 <style>
-    /* 全局 */
-    [data-testid="stAppViewContainer"] { background: #0f172a; }
+    /* ========== 全局 ========== */
+    [data-testid="stAppViewContainer"] {
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        min-height: 100vh;
+    }
     [data-testid="stHeader"] { display: none; }
     [data-testid="stToolbar"] { display: none; }
 
     /* 滚动条 */
-    ::-webkit-scrollbar { width: 6px; }
+    ::-webkit-scrollbar { width: 5px; }
     ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb { background: #334155; border-radius: 3px; }
+    ::-webkit-scrollbar-thumb { background: #475569; border-radius: 10px; }
+    ::-webkit-scrollbar-thumb:hover { background: #64748b; }
 
-    /* 聊天消息气泡 */
-    .chat-user {
-        background: #1e40af;
-        color: white;
-        padding: 10px 16px;
-        border-radius: 16px 16px 4px 16px;
-        margin: 4px 0;
-        max-width: 85%;
+    /* ========== 聊天消息 ========== */
+    .msg-user {
+        background: linear-gradient(135deg, #1e40af, #2563eb);
+        color: #fff;
+        padding: 12px 18px;
+        border-radius: 18px 18px 4px 18px;
+        margin: 6px 0;
+        max-width: 88%;
         font-size: 14px;
-        line-height: 1.5;
+        line-height: 1.6;
+        box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
+        margin-left: auto;
     }
-    .chat-ai {
-        background: #1e293b;
+    .msg-ai {
+        background: linear-gradient(135deg, #1e293b, #334155);
         color: #e2e8f0;
-        padding: 10px 16px;
-        border-radius: 16px 16px 16px 4px;
-        margin: 4px 0;
-        max-width: 85%;
+        padding: 12px 18px;
+        border-radius: 18px 18px 18px 4px;
+        margin: 6px 0;
+        max-width: 88%;
         font-size: 14px;
-        line-height: 1.5;
+        line-height: 1.6;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
     }
-    .chat-correction {
+    .msg-opening {
+        background: linear-gradient(135deg, #1a2332, #243447);
+        color: #93c5fd;
+        padding: 14px 20px;
+        border-radius: 16px;
+        margin: 8px 0;
+        max-width: 90%;
+        font-size: 14px;
+        line-height: 1.6;
+        border-left: 3px solid #3b82f6;
+    }
+
+    /* 纠错卡片 */
+    .corr-card {
         background: #1a1a2e;
         border-left: 3px solid #f59e0b;
-        color: #cbd5e1;
-        padding: 8px 14px;
-        border-radius: 0 8px 8px 0;
-        margin: 6px 0;
+        border-radius: 0 10px 10px 0;
+        padding: 10px 16px;
+        margin: 8px 0 8px 20px;
         font-size: 13px;
-        line-height: 1.5;
+        line-height: 1.6;
+        color: #cbd5e1;
+        max-width: 85%;
+    }
+    .corr-card .corr-title {
+        color: #f59e0b;
+        font-weight: 600;
+        margin-bottom: 4px;
+    }
+    .corr-card .corr-corrected {
+        color: #86efac;
+        font-weight: 500;
     }
 
-    /* 侧边栏 */
-    section[data-testid="stSidebar"] { background: #0f172a; }
+    /* ========== 侧边栏 ========== */
+    section[data-testid="stSidebar"] {
+        background: #0f172a;
+        border-right: 1px solid #1e293b;
+    }
     section[data-testid="stSidebar"] * { color: #e2e8f0 !important; }
-    .stSelectbox label, .stSlider label { color: #94a3b8 !important; }
-    .stSelectbox > div { color: #e2e8f0 !important; }
+    .stSidebar .css-1e5gk1n { background: #0f172a; }
 
-    /* 评分条 */
-    .score-bar-bg {
-        background: #1e293b;
-        border-radius: 6px;
-        height: 10px;
-        overflow: hidden;
-        margin: 4px 0;
+    /* 侧边栏标题 */
+    .sidebar-title {
+        font-size: 20px;
+        font-weight: 700;
+        color: #f8fafc;
+        margin-bottom: 4px;
     }
-    .score-bar-fill {
-        height: 100%;
-        border-radius: 6px;
-        transition: width 0.5s ease;
+    .sidebar-subtitle {
+        font-size: 12px;
+        color: #64748b;
+        margin-bottom: 16px;
+    }
+
+    /* 场景卡片 */
+    .scenario-card {
+        background: #1e293b;
+        border: 2px solid #334155;
+        border-radius: 12px;
+        padding: 12px 14px;
+        margin: 6px 0;
+        cursor: pointer;
+        transition: all 0.2s;
+    }
+    .scenario-card:hover {
+        border-color: #3b82f6;
+        background: #1e3a5f;
+    }
+    .scenario-card.active {
+        border-color: #3b82f6;
+        background: linear-gradient(135deg, #1e3a5f, #1e40af);
+        box-shadow: 0 0 12px rgba(59, 130, 246, 0.3);
+    }
+    .scenario-card .sc-icon { font-size: 20px; }
+    .scenario-card .sc-name { font-weight: 600; color: #f1f5f9; font-size: 14px; }
+    .scenario-card .sc-desc { font-size: 11px; color: #94a3b8; margin-top: 2px; }
+
+    /* 难度选择 */
+    .diff-btn {
+        background: #1e293b;
+        border: 2px solid #334155;
+        border-radius: 10px;
+        padding: 8px 12px;
+        margin: 3px;
+        cursor: pointer;
+        font-size: 13px;
+        color: #e2e8f0;
+        transition: all 0.2s;
+        text-align: center;
+        display: inline-block;
+    }
+    .diff-btn:hover { border-color: #3b82f6; }
+    .diff-btn.active {
+        border-color: #3b82f6;
+        background: #1e3a5f;
+        color: #fff;
+        font-weight: 600;
     }
 
     /* 按钮 */
     .stButton > button {
-        background: #2563eb;
+        background: linear-gradient(135deg, #2563eb, #1d4ed8);
         color: white;
         border: none;
-        border-radius: 8px;
-        padding: 8px 20px;
+        border-radius: 10px;
+        padding: 10px 20px;
         font-weight: 600;
+        font-size: 14px;
+        transition: all 0.2s;
     }
-    .stButton > button:hover { background: #1d4ed8; }
+    .stButton > button:hover {
+        background: linear-gradient(135deg, #1d4ed8, #1e40af);
+        transform: translateY(-1px);
+        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.4);
+    }
+    .btn-danger {
+        background: linear-gradient(135deg, #dc2626, #b91c1c) !important;
+    }
+    .btn-danger:hover {
+        background: linear-gradient(135deg, #b91c1c, #991b1b) !important;
+    }
 
     /* 输入框 */
     .stTextInput input {
         background: #1e293b;
         color: #e2e8f0;
-        border: 1px solid #334155;
-        border-radius: 10px;
+        border: 2px solid #334155;
+        border-radius: 12px;
+        padding: 12px 16px;
+        font-size: 14px;
     }
-    .stTextInput input:focus { border-color: #2563eb; }
+    .stTextInput input:focus {
+        border-color: #3b82f6;
+        box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+    }
     .stTextInput > div > div > div { color: #94a3b8 !important; }
 
-    /* 标签 */
-    .metric-label { color: #94a3b8; font-size: 12px; }
-    .metric-value { color: #f1f5f9; font-size: 18px; font-weight: 700; }
+    /* 聊天输入区 */
+    .chat-input-area {
+        background: #1e293b;
+        border-radius: 16px;
+        padding: 16px;
+        border: 2px solid #334155;
+    }
 
-    /* 分割线 */
-    hr { border-color: #1e293b; margin: 12px 0; }
+    /* ========== 评分条 ========== */
+    .score-card {
+        background: #1e293b;
+        border-radius: 12px;
+        padding: 16px;
+        margin: 8px 0;
+    }
+    .score-bar-bg {
+        background: #0f172a;
+        border-radius: 8px;
+        height: 8px;
+        overflow: hidden;
+        margin: 6px 0;
+    }
+    .score-bar-fill {
+        height: 100%;
+        border-radius: 8px;
+        transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+    }
 
-    /* 会话状态指示器 */
+    /* ========== 面板卡片 ========== */
+    .panel-card {
+        background: #1e293b;
+        border-radius: 14px;
+        padding: 20px;
+        margin: 8px 0;
+        border: 1px solid #334155;
+    }
+    .panel-title {
+        font-size: 15px;
+        font-weight: 700;
+        color: #f1f5f9;
+        margin-bottom: 12px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+    }
+    .panel-stat {
+        display: flex;
+        justify-content: space-between;
+        padding: 6px 0;
+        border-bottom: 1px solid #1e293b;
+        font-size: 13px;
+    }
+    .panel-stat:last-child { border-bottom: none; }
+    .panel-stat .label { color: #64748b; }
+    .panel-stat .value { color: #e2e8f0; font-weight: 600; }
+
+    /* ========== 头部 ========== */
+    .main-header {
+        text-align: center;
+        padding: 20px 0 10px;
+    }
+    .main-header h1 {
+        font-size: 28px;
+        font-weight: 800;
+        background: linear-gradient(135deg, #60a5fa, #a78bfa, #f472b6);
+        -webkit-background-clip: text;
+        -webkit-text-fill-color: transparent;
+        margin: 0;
+    }
+    .main-header .subtitle {
+        font-size: 13px;
+        color: #64748b;
+        margin-top: 4px;
+    }
+
+    /* ========== 状态指示 ========== */
+    .status-badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 4px 12px;
+        border-radius: 20px;
+        font-size: 12px;
+        font-weight: 600;
+    }
+    .status-active {
+        background: rgba(34, 197, 94, 0.15);
+        color: #22c55e;
+    }
+    .status-idle {
+        background: rgba(100, 116, 139, 0.15);
+        color: #64748b;
+    }
     .status-dot {
-        display: inline-block;
         width: 8px; height: 8px;
         border-radius: 50%;
-        margin-right: 6px;
+        display: inline-block;
     }
-    .status-active { background: #22c55e; box-shadow: 0 0 6px #22c55e88; }
-    .status-idle { background: #64748b; }
+    .dot-active { background: #22c55e; box-shadow: 0 0 6px #22c55e88; }
+    .dot-idle { background: #64748b; }
+
+    /* ========== 欢迎区 ========== */
+    .welcome-card {
+        background: linear-gradient(135deg, #1e293b, #1e3a5f);
+        border: 1px solid #334155;
+        border-radius: 16px;
+        padding: 40px 30px;
+        text-align: center;
+        margin: 20px 0;
+    }
+    .welcome-card .welcome-icon { font-size: 48px; margin-bottom: 12px; }
+    .welcome-card .welcome-title {
+        font-size: 20px;
+        font-weight: 700;
+        color: #f1f5f9;
+        margin-bottom: 8px;
+    }
+    .welcome-card .welcome-desc {
+        font-size: 13px;
+        color: #94a3b8;
+        line-height: 1.6;
+    }
+
+    /* 分割线 */
+    hr { border-color: #1e293b; margin: 8px 0; }
+
+    /* 侧边栏选择器样式 */
+    .stSelectbox label, .stSlider label { color: #94a3b8 !important; font-size: 12px; }
+    .stSelectbox > div { color: #e2e8f0 !important; }
+
+    /* 页脚 */
+    .footer {
+        text-align: center;
+        padding: 20px 0 10px;
+        font-size: 11px;
+        color: #475569;
+    }
 </style>
 """, unsafe_allow_html=True)
 
@@ -228,16 +456,39 @@ def _check_connection() -> bool:
 
 
 # ============================================================================
-# 场景选择侧边栏
+# 回调函数
+# ============================================================================
+
+
+def _select_scenario(scenario_key: str, scenario_name: str) -> None:
+    """场景选择回调"""
+    st.session_state.scenario = scenario_key
+    st.session_state.scenario_name = scenario_name
+
+
+def _select_difficulty(diff: str) -> None:
+    """难度选择回调"""
+    st.session_state.difficulty = diff
+
+
+def _select_level(lvl: str) -> None:
+    """水平选择回调"""
+    st.session_state.level = lvl
+
+
+# ============================================================================
+# 侧边栏 — 场景选择 + 会话控制
 # ============================================================================
 
 with st.sidebar:
-    st.markdown("### 🎓 AI English Coach")
+    # Logo + 标题
+    st.markdown('<div class="sidebar-title">🎓 AI口语陪练</div>', unsafe_allow_html=True)
+    st.markdown('<div class="sidebar-subtitle">LangGraph 多Agent协作架构</div>', unsafe_allow_html=True)
     st.markdown("---")
 
     # API 地址
     api_url = st.text_input(
-        "API Address",
+        "API 地址",
         value="http://localhost:8000",
         key="api_url_input",
         help="后端 FastAPI 服务地址",
@@ -250,59 +501,74 @@ with st.sidebar:
     # 连接状态
     connected = _check_connection()
     if connected:
-        st.success("✅ Connected")
+        st.success("✅ 已连接")
     else:
-        st.error("❌ Backend unreachable")
+        st.error("❌ 后端未连接")
 
     st.markdown("---")
 
-    # 场景选择
-    st.markdown("### 📋 Scenario")
+    # 场景选择（卡片式）
+    st.markdown("**📋 选择场景**")
     scenario_keys = list(SCENARIOS.keys())
-    scenario_labels = [f"{SCENARIOS[k]['icon']} {SCENARIOS[k]['name']}" for k in scenario_keys]
-    selected_idx = st.selectbox(
-        "Choose scenario",
-        options=range(len(scenario_keys)),
-        format_func=lambda i: scenario_labels[i],
-        key="scenario_selector",
-        disabled=st.session_state.session_active,
-    )
-    if selected_idx is not None:
-        st.session_state.scenario = scenario_keys[selected_idx]
-        st.session_state.scenario_name = SCENARIOS[st.session_state.scenario]["name"]
+    for i, key in enumerate(scenario_keys):
+        sc = SCENARIOS[key]
+        is_active = st.session_state.scenario == key and not st.session_state.session_active
+        btn_type = "primary" if is_active else "secondary"
+        col_left, col_right = st.columns([3, 1])
+        with col_left:
+            st.markdown(
+                f'<div class="scenario-card {"active" if is_active else ""}">'
+                f'<span class="sc-icon">{sc["icon"]}</span> '
+                f'<span class="sc-name">{sc["name"]}</span><br>'
+                f'<span class="sc-desc">{sc["desc"]}</span>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
+        with col_right:
+            st.button("选择", key=f"sc_{key}", use_container_width=True, type=btn_type,
+                     on_click=_select_scenario, args=(key, sc["name"]))
 
     # 难度选择
-    st.markdown("### 📊 Difficulty")
-    diff_idx = st.selectbox(
-        "Difficulty level",
-        options=range(len(DIFFICULTIES)),
-        format_func=lambda i: f"{DIFFICULTIES[i].capitalize()} → {DIFFICULTY_LABELS[DIFFICULTIES[i]]}",
-        key="difficulty_selector",
-        disabled=st.session_state.session_active,
-    )
-    if diff_idx is not None:
-        st.session_state.difficulty = DIFFICULTIES[diff_idx]
+    st.markdown("**📊 难度等级**")
+    diff_cols = st.columns(3)
+    for i, diff in enumerate(DIFFICULTIES):
+        d = DIFFICULTIES[diff]
+        is_active = st.session_state.difficulty == diff
+        btn_class = "diff-btn active" if is_active else "diff-btn"
+        with diff_cols[i]:
+            st.markdown(
+                f'<div class="{btn_class}">'
+                f'{d["emoji"]} {d["label"]}</div>',
+                unsafe_allow_html=True,
+            )
+            st.button("选择", key=f"diff_{diff}", use_container_width=True,
+                     type="primary" if is_active else "secondary",
+                     on_click=_select_difficulty, args=(diff,))
 
     # 用户水平
-    st.markdown("### 👤 Your Level")
-    level_idx = st.selectbox(
-        "English level",
-        options=range(len(LEVELS)),
-        format_func=lambda i: LEVELS[i].capitalize(),
-        key="level_selector",
-        disabled=st.session_state.session_active,
-    )
-    if level_idx is not None:
-        st.session_state.level = LEVELS[level_idx]
+    st.markdown("**👤 您的水平**")
+    level_cols = st.columns(3)
+    for i, lvl in enumerate(LEVELS):
+        lv = LEVELS[lvl]
+        is_active = st.session_state.level == lvl
+        btn_class = "diff-btn active" if is_active else "diff-btn"
+        with level_cols[i]:
+            st.markdown(
+                f'<div class="{btn_class}">{lv["label"]}</div>',
+                unsafe_allow_html=True,
+            )
+            st.button("选择", key=f"lvl_{lvl}", use_container_width=True,
+                     type="primary" if is_active else "secondary",
+                     on_click=_select_level, args=(lvl,))
 
     st.markdown("---")
 
     # 会话控制
-    st.markdown("### 🎮 Controls")
+    st.markdown("**🎮 会话控制**")
     col_start, col_new = st.columns(2)
     with col_start:
         if not st.session_state.session_active:
-            if st.button("▶ Start", use_container_width=True):
+            if st.button("▶ 开始练习", use_container_width=True):
                 try:
                     resp = st.session_state.client.start_session(
                         scenario=st.session_state.scenario,
@@ -317,17 +583,17 @@ with st.sidebar:
                     st.session_state.last_score = None
                     st.session_state.last_correction = None
                     st.session_state.skill_progress = None
-                    # 清空聊天历史（保留开场白）
                     opening = resp.get("opening_line", "")
                     st.session_state.messages = [
-                        {"role": "ai", "content": opening, "correction": None, "score": None}
+                        {"role": "opening", "content": opening}
                     ]
+                    st.toast("🎉 会话已开启！", icon="🎉")
                     st.rerun()
                 except Exception as e:
-                    st.error(f"Failed to start: {e}")
+                    st.error(f"启动失败：{e}")
     with col_new:
         if st.session_state.session_active:
-            if st.button("🔄 New", use_container_width=True):
+            if st.button("🔄 新会话", use_container_width=True, type="secondary"):
                 st.session_state.session_active = False
                 st.session_state.session_id = None
                 st.session_state.thread_id = None
@@ -339,163 +605,206 @@ with st.sidebar:
                 st.session_state.retry_count = 0
                 st.rerun()
 
-    # 当前状态
+    # 状态指示
+    st.markdown("---")
     if st.session_state.session_active:
-        st.markdown(f'<span class="status-dot status-active"></span><b>Active</b>', unsafe_allow_html=True)
-        st.caption(f"Turn {st.session_state.turn} · {st.session_state.retry_count} retries")
+        st.markdown(
+            '<div class="status-badge status-active">'
+            '<span class="status-dot dot-active"></span>练习中</div>',
+            unsafe_allow_html=True,
+        )
+        st.caption(f"第 {st.session_state.turn} 轮 · 重试 {st.session_state.retry_count} 次")
     else:
-        st.markdown('<span class="status-dot status-idle"></span><b>Idle</b>', unsafe_allow_html=True)
+        st.markdown(
+            '<div class="status-badge status-idle">'
+            '<span class="status-dot dot-idle"></span>未开始</div>',
+            unsafe_allow_html=True,
+        )
 
 # ============================================================================
-# 主区域 - 聊天窗口
+# 主区域 — 头部
 # ============================================================================
 
-st.markdown("## 💬 Chat")
+st.markdown("""
+<div class="main-header">
+    <h1>🎓 AI英语口语陪练</h1>
+    <div class="subtitle">LangGraph 多Agent协作 · 场景 → 对话 → 纠错 → 评分</div>
+</div>
+""", unsafe_allow_html=True)
 
-# 消息历史
-for msg in st.session_state.messages:
-    if msg["role"] == "user":
-        st.markdown(f'<div class="chat-user">🙋 You: {msg["content"]}</div>', unsafe_allow_html=True)
-    elif msg["role"] == "ai":
-        st.markdown(f'<div class="chat-ai">🤖 AI: {msg["content"]}</div>', unsafe_allow_html=True)
-        # 纠错信息
-        if msg.get("correction") and msg["correction"].get("has_errors"):
-            corr = msg["correction"]
+# ============================================================================
+# 主区域 — 聊天窗口
+# ============================================================================
+
+if not st.session_state.session_active:
+    # 欢迎区
+    st.markdown("""
+    <div class="welcome-card">
+        <div class="welcome-icon">👋</div>
+        <div class="welcome-title">欢迎使用 AI 英语口语陪练</div>
+        <div class="welcome-desc">
+            在左侧选择练习场景和难度，点击「开始练习」即可开始。<br>
+            系统将为您生成场景开场白，并进行智能纠错与四维评分。
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
+else:
+    # 消息历史
+    for msg in st.session_state.messages:
+        if msg["role"] == "opening":
             st.markdown(
-                f'<div class="chat-correction">'
-                f"<b>📝 Correction:</b> {corr.get('explanation', '')}<br>"
-                f"<b>Corrected:</b> {corr.get('corrected', '')}<br>"
-                f"<b>Suggestion:</b> {corr.get('suggestion', '')}"
-                f"</div>",
+                f'<div class="msg-opening">🤖 <b>{st.session_state.scenario_name}</b>：{msg["content"]}</div>',
                 unsafe_allow_html=True,
             )
-        # 评分信息
-        if msg.get("score"):
-            score = msg["score"]
-            total = score.get("total", 0)
-            st.caption(f"**Score: {total}/10** — {score.get('feedback_zh', '')}")
+        elif msg["role"] == "user":
+            st.markdown(f'<div class="msg-user">🙋 {msg["content"]}</div>', unsafe_allow_html=True)
+        elif msg["role"] == "ai":
+            st.markdown(f'<div class="msg-ai">🤖 {msg["content"]}</div>', unsafe_allow_html=True)
+            # 纠错信息
+            corr = msg.get("correction")
+            if corr and corr.get("has_errors"):
+                st.markdown(
+                    f'<div class="corr-card">'
+                    f'<div class="corr-title">📝 纠错</div>'
+                    f'{corr.get("explanation", "")}<br>'
+                    f'<span class="corr-corrected">✅ 修正：{corr.get("corrected", "")}</span><br>'
+                    f'💡 建议：{corr.get("suggestion", "")}',
+                    unsafe_allow_html=True,
+                )
+            # 评分信息
+            score = msg.get("score")
+            if score:
+                total = score.get("total", 0)
+                fb_zh = score.get("feedback_zh", "")
+                st.caption(f"📊 综合评分：<b>{total}/10</b> — {fb_zh}")
 
-# 输入框
-if st.session_state.session_active:
-    user_input = st.chat_input("Type your English message...", key="chat_input")
-else:
-    st.info("Click **Start** to begin a practice session.")
-    user_input = None
+    # 输入框
+    st.markdown('<div class="chat-input-area">', unsafe_allow_html=True)
+    user_input = st.chat_input("请输入英语消息...", key="chat_input")
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# 处理发送
-if user_input and user_input.strip():
-    try:
-        resp = st.session_state.client.chat(message=user_input.strip())
+    # 处理发送
+    if user_input and user_input.strip():
+        try:
+            resp = st.session_state.client.chat(message=user_input.strip())
 
-        # 提取数据
-        ai_reply = resp.get("ai_reply", "")
-        correction = resp.get("correction")
-        score = resp.get("score")
-        skill_progress = resp.get("skill_progress")
-        turn = resp.get("turn", 0)
-        retry_count = resp.get("retry_count", 0)
-        difficulty = resp.get("difficulty", "medium")
+            ai_reply = resp.get("ai_reply", "")
+            correction = resp.get("correction")
+            score = resp.get("score")
+            skill_progress = resp.get("skill_progress")
+            turn = resp.get("turn", 0)
+            retry_count = resp.get("retry_count", 0)
+            difficulty = resp.get("difficulty", "medium")
 
-        # 更新会话状态
-        st.session_state.turn = turn
-        st.session_state.retry_count = retry_count
-        st.session_state.last_score = score
-        st.session_state.last_correction = correction
-        st.session_state.skill_progress = skill_progress
-        st.session_state.difficulty = difficulty
+            st.session_state.turn = turn
+            st.session_state.retry_count = retry_count
+            st.session_state.last_score = score
+            st.session_state.last_correction = correction
+            st.session_state.skill_progress = skill_progress
+            st.session_state.difficulty = difficulty
 
-        # 添加消息到历史
-        st.session_state.messages.append({
-            "role": "user",
-            "content": user_input.strip(),
-            "correction": correction,
-            "score": score,
-        })
-        st.session_state.messages.append({
-            "role": "ai",
-            "content": ai_reply,
-            "correction": correction,
-            "score": score,
-        })
+            st.session_state.messages.append({
+                "role": "user",
+                "content": user_input.strip(),
+                "correction": correction,
+                "score": score,
+            })
+            st.session_state.messages.append({
+                "role": "ai",
+                "content": ai_reply,
+                "correction": correction,
+                "score": score,
+            })
 
-        st.rerun()
+            st.rerun()
 
-    except Exception as e:
-        st.error(f"Failed to send message: {e}")
+        except Exception as e:
+            st.error(f"发送失败：{e}")
 
 # ============================================================================
-# 底部 - 评分面板 + 学习进度（三栏布局的右栏）
+# 底部 — 三栏面板
 # ============================================================================
 
 st.markdown("---")
 
-# 三栏：评分维度 | 学习进度 | 会话统计
-col_score, col_progress, col_stats = st.columns(3, gap="large")
+col_score, col_progress, col_stats = st.columns(3, gap="medium")
 
 # --- 左：四维评分 ---
 with col_score:
-    st.markdown("### 📊 Scores")
+    st.markdown('<div class="panel-title">📊 四维评分</div>', unsafe_allow_html=True)
     score = st.session_state.last_score
     if score:
         scores = score.get("scores", {})
-        for dim, (label_en, label_zh) in DIMENSION_LABELS.items():
+        for dim, (label, emoji) in DIMENSION_LABELS.items():
             val = scores.get(dim, 0)
             pct = val / 10 * 100
-            # 颜色
-            if val >= 7:
-                color = "#22c55e"
-            elif val >= 5:
-                color = "#f59e0b"
-            else:
-                color = "#ef4444"
+            color = DIMENSION_COLORS.get(dim, "#3b82f6")
+            bar_color = "#22c55e" if val >= 7 else "#f59e0b" if val >= 5 else "#ef4444"
             st.markdown(
-                f'<div class="metric-label">{label_en} ({label_zh})</div>'
-                f'<div class="score-bar-bg"><div class="score-bar-fill" style="width:{pct}%;background:{color};"></div></div>'
-                f'<div class="metric-value" style="color:{color};">{val:.1f}/10</div>',
+                f'<div class="score-card">'
+                f'<div style="display:flex;justify-content:space-between;align-items:center;">'
+                f'<span style="font-size:13px;font-weight:600;color:#e2e8f0;">{emoji} {label}</span>'
+                f'<span style="font-size:16px;font-weight:700;color:{bar_color};">{val:.1f}</span>'
+                f'</div>'
+                f'<div class="score-bar-bg"><div class="score-bar-fill" style="width:{pct}%;background:{bar_color};"></div></div>'
+                f'</div>',
                 unsafe_allow_html=True,
             )
     else:
-        st.caption("No scores yet — send a message to get evaluated.")
+        st.caption("发送消息后显示评分")
 
 # --- 中：学习进度 ---
 with col_progress:
-    st.markdown("### 📈 Progress")
+    st.markdown('<div class="panel-title">📈 学习进度</div>', unsafe_allow_html=True)
     progress = st.session_state.skill_progress
     if progress:
         traj = progress.get("improvement_trajectory", [])
-        st.caption(f"Total turns: **{progress.get('total_turns', 0)}**")
-        st.caption(f"Avg score: **{progress.get('avg_score', 0)}**")
-        st.caption(f"Weakest: **{progress.get('weakest_dimension', '-')}**")
-        st.caption(f"Strongest: **{progress.get('strongest_dimension', '-')}**")
+        st.markdown(
+            f'<div class="panel-card">'
+            f'<div class="panel-stat"><span class="label">总轮次</span><span class="value">{progress.get("total_turns", 0)}</span></div>'
+            f'<div class="panel-stat"><span class="label">平均评分</span><span class="value">{progress.get("avg_score", 0)}</span></div>'
+            f'<div class="panel-stat"><span class="label">最弱项</span><span class="value">{progress.get("weakest_dimension", "-")}</span></div>'
+            f'<div class="panel-stat"><span class="label">最强项</span><span class="value">{progress.get("strongest_dimension", "-")}</span></div>'
+            f'</div>',
+            unsafe_allow_html=True,
+        )
         if traj:
-            # 简易趋势条
             max_val = max(traj) if traj else 1
             bars = "".join("▓" for _ in range(int(v / max_val * 15))) if traj else ""
-            st.markdown(f"**History:** {bars}")
+            st.markdown(f'**📉 成绩趋势：** {bars}')
     else:
-        st.caption("No progress data yet.")
+        st.caption("练习后将显示学习进度")
 
 # --- 右：会话统计 ---
 with col_stats:
-    st.markdown("### 📋 Session")
-    st.caption(f"Scenario: **{st.session_state.scenario_name}**")
-    st.caption(f"Difficulty: **{DIFFICULTY_LABELS.get(st.session_state.difficulty, st.session_state.difficulty)}**")
-    st.caption(f"Turn: **{st.session_state.turn}**")
-    st.caption(f"Retries: **{st.session_state.retry_count}**")
-    if st.session_state.last_score:
-        total = st.session_state.last_score.get("total", 0)
-        st.caption(f"Last score: **{total}/10**")
+    st.markdown('<div class="panel-title">📋 会话信息</div>', unsafe_allow_html=True)
+    diff_label = DIFFICULTIES.get(st.session_state.difficulty, {}).get("label", st.session_state.difficulty)
+    st.markdown(
+        f'<div class="panel-card">'
+        f'<div class="panel-stat"><span class="label">场景</span><span class="value">{st.session_state.scenario_name}</span></div>'
+        f'<div class="panel-stat"><span class="label">难度</span><span class="value">{diff_label}</span></div>'
+        f'<div class="panel-stat"><span class="label">轮次</span><span class="value">{st.session_state.turn}</span></div>'
+        f'<div class="panel-stat"><span class="label">重试</span><span class="value">{st.session_state.retry_count}</span></div>'
+        f'</div>',
+        unsafe_allow_html=True,
+    )
     if st.session_state.last_correction:
         corr = st.session_state.last_correction
         if corr.get("polished"):
-            st.caption(f"**Polished:** {corr['polished'][:60]}...")
+            st.markdown(
+                f'<div class="panel-card">'
+                f'<div class="panel-stat"><span class="label">✨ 地道表达</span></div>'
+                f'<div style="color:#86efac;font-size:12px;padding:4px 0;">{corr["polished"][:80]}</div>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
 
 # ============================================================================
 # 页脚
 # ============================================================================
 
-st.markdown("---")
-st.caption(
-    "AI English Coach · LangGraph StateGraph Architecture · "
-    "Scenario → Conversation → Correction → Scoring"
-)
+st.markdown("""
+<div class="footer">
+    AI英语口语陪练 · LangGraph StateGraph 架构 · 场景 → 对话 → 纠错 → 评分
+</div>
+""", unsafe_allow_html=True)
