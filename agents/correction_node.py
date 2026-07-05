@@ -25,6 +25,7 @@ from typing import Any
 
 from agents.llm_client import call_llm_json
 from agents.prompts_loader import load_prompt
+from agents.utils import extract_latest_user_input
 from config.settings import settings
 
 logger = logging.getLogger(__name__)
@@ -178,6 +179,21 @@ _POLISH_UPGRADES: list[tuple[str, str, str]] = [
 # ============================================================================
 
 
+def _empty_correction(reason: str = "") -> dict[str, Any]:
+    """返回空的纠错结果"""
+    return {
+        "original": "",
+        "errors": [],
+        "error_details": [],
+        "corrected": "",
+        "suggestion": "",
+        "polished": "",
+        "explanation": reason,
+        "has_errors": False,
+        "polish_level": "basic",
+    }
+
+
 async def correction_node(state: dict[str, Any]) -> dict[str, Any]:
     """
     纠错 Node
@@ -193,7 +209,7 @@ async def correction_node(state: dict[str, Any]) -> dict[str, Any]:
         State 增量更新 dict
     """
     messages: list = state.get("messages", [])
-    user_input = _extract_latest_user_input(messages)
+    user_input = extract_latest_user_input(messages)
 
     if not user_input:
         return {"correction": _empty_correction("没有检测到用户输入")}
@@ -229,30 +245,7 @@ async def correction_node(state: dict[str, Any]) -> dict[str, Any]:
 
 
 # ============================================================================
-# 辅助函数
-# ============================================================================
-
-
-def _extract_latest_user_input(messages: list) -> str:
-    """从消息列表中提取最新的用户输入（兼容 dict 和 LangChain BaseMessage）"""
-    for msg in reversed(messages):
-        if isinstance(msg, dict):
-            if msg.get("role") == "user":
-                return msg.get("content", "").strip()
-        else:
-            # LangChain BaseMessage: use .type attribute ('human'/'ai')
-            role = getattr(msg, "type", None)
-            if role == "human":
-                return getattr(msg, "content", "").strip()
-            # Fallback: try _content attribute (some LangChain versions)
-            content = getattr(msg, "content", None) or getattr(msg, "_content", None)
-            if content and role in ("human", "user"):
-                return str(content).strip()
-    return ""
-    return ""
-
-
-def _empty_correction(reason: str = "") -> dict[str, Any]:
+# LLM 纠错通道
     return {
         "original": "",
         "errors": [],

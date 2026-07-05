@@ -1,16 +1,22 @@
 """
 全局配置管理
 
-使用 pydantic-settings 提供类型安全的配置加载，
+使用 pydantic v2 settings 提供类型安全的配置加载，
 支持环境变量和 .env 文件两种方式。
 """
 
-from pydantic_settings import BaseSettings
+from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import Literal
 
 
 class Settings(BaseSettings):
     """系统全局配置"""
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        env_file_encoding="utf-8",
+        extra="ignore",
+    )
 
     # === LLM 配置 ===
     # 当前使用的 Provider: openai / anthropic / groq(qwen)
@@ -51,11 +57,6 @@ class Settings(BaseSettings):
     llm_mode_conversation: bool = False  # conversation node 使用 LLM
     llm_mode_correction: bool = False    # correction node 使用 LLM 纠错
     llm_mode_scoring: bool = False       # scoring node 使用 LLM 评分
-
-    class Config:
-        env_file = ".env"
-        env_file_encoding = "utf-8"
-        extra = "ignore"
 
 
 # 全局单例配置

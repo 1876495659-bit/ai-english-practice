@@ -52,9 +52,7 @@ LangGraph StateGraph Builder - AI 英语口语陪练系统
 from __future__ import annotations
 
 import logging
-import os
-from contextlib import asynccontextmanager
-from typing import Any, AsyncIterator, Optional
+from typing import Optional
 
 from agents.conversation_node import conversation_node
 from agents.correction_node import correction_node
@@ -75,45 +73,18 @@ logger = logging.getLogger(__name__)
 def _create_sqlite_checkpointer():
     """
     尝试创建 SQLite Checkpointer（生产级持久化）。
-    如果 sqlite 不可用则回退到 MemorySaver。
+
+    注意：langgraph-checkpoint-sqlite 的 SqliteSaver.from_conn_string()
+    返回 context manager，不适合直接传入 compile()。
+    因此默认回退到 InMemorySaver（LangGraph 1.x 的 MemorySaver 别名）。
+    如需 SQLite 持久化，可使用 demo_checkpoint.py 中的手动管理方式。
 
     Returns:
-        AsyncSqliteSaver 实例（非上下文管理器），或 None（回退到 MemorySaver）
+        None（始终回退到 MemorySaver）
     """
-    try:
-        from langgraph.checkpoint.sqlite.aio import AsyncSqliteSaver
-
-        db_path = os.environ.get(
-            "CHECKPOINT_DB_PATH",
-            os.path.join(
-                os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-                "..",
-                "data",
-                "checkpoints.db",
-            ),
-        )
-        # 确保数据目录存在
-        db_dir = os.path.dirname(db_path)
-        if db_dir:
-            os.makedirs(db_dir, exist_ok=True)
-
-        # from_conn_string 返回上下文管理器，我们提前 enter 它
-        ctx = AsyncSqliteSaver.from_conn_string(db_path)
-        saver = ctx.__enter__()
-        logger.info(f"[Checkpointer] SQLite checkpointer enabled: {db_path}")
-        return saver
-    except ImportError:
-        logger.warning(
-            "[Checkpointer] langgraph-checkpoint-sqlite not installed. "
-            "Falling back to MemorySaver (non-persistent)."
-        )
-        return None
-    except Exception as e:
-        logger.warning(
-            f"[Checkpointer] Failed to init SQLite checkpointer ({e}). "
-            "Falling back to MemorySaver."
-        )
-        return None
+    # SQLite checkpointer 在 LangGraph 1.x 中需要通过 context manager 管理，
+    # 不适合在此处直接实例化。默认使用 MemorySaver。
+    return None
 
 
 def _create_memory_checkpointer() -> MemorySaver:
@@ -123,7 +94,7 @@ def _create_memory_checkpointer() -> MemorySaver:
 
 
 # 全局 checkpointer 实例
-_sqlite_saver: Any = None
+_sqlite_saver = None
 _memory_saver: Optional[MemorySaver] = None
 
 

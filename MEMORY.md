@@ -73,22 +73,34 @@ User Input → State → [scenario → conversation → correction → scoring] 
 
 ## 当前开发阶段（实时更新此阶段）
 
-**Stage 7**：MVP Web UI（Streamlit）
+**Stage 8**：Bug Fixes & Test Hardening
 - ✅ Stage 4：LLM 真实接入（统一 LLM 调用层 + mock 回退 + 双通道设计 + 细粒度开关 + 错误隔离）
 - ✅ Stage 5：自适应学习（skill_progress 能力追踪 + 难度自适应调整 + Command 条件路由 Loop Training）
 - ✅ Stage 6：SQLite Checkpointer 持久化（session 可恢复 + 进程重启恢复 + 中断续练）+ FastAPI RESTful API
 - ✅ Stage 7：MVP Web UI（Streamlit 三栏布局：场景选择 + 聊天窗口 + 评分面板）
-- ✅ Prompt 文件抽取（`prompts_loader.py` + 3 个模板文件已接入 Node）
-- ✅ 单元测试覆盖（29/29 通过 — 规则引擎、评分算法、场景配置）
+- ✅ Stage 8：Bug Fixes & Test Hardening
+  - `extract_latest_user_input` 抽取为公共函数 `agents/utils.py`，修复 LangGraph 1.x BaseMessage 兼容
+  - `correction_node.py` 死代码清理（重复 return ""）
+  - `config/settings.py` 升级为 pydantic v2 `SettingsConfigDict`
+  - `graph_builder.py` SQLite Checkpointer 回退策略完善（InMemorySaver 默认）
+  - 单元测试 98/98 通过（test_rule_engine / test_scoring_node / test_graph_builder / test_api / test_utils）
+  - pytest.ini 配置 + pytest-asyncio 依赖
 - ✅ Python 3.14 兼容性修复
-- ✅ LangGraph 1.x 兼容修复（`_extract_latest_user_input` 处理 BaseMessage）
-- 📝 待优化：评分归零问题（LangGraph 1.x `add_messages` reducer 在图管道中的行为差异 — 直接 Node 调用正常，图管道中 scoring 节点可能未被触发）
+- ✅ LangGraph 1.x 全面兼容（InMemorySaver、CompiledStateGraph、BaseMessage 格式）
 
 ---
 
 ## 已知问题记录
 
 详见 [DEVELOPMENT_ISSUES.md](DEVELOPMENT_ISSUES.md)
+
+### 已知问题（已降级）
+
+| 问题 | 状态 | 说明 |
+|------|------|------|
+| LLM 评分/纠错通道 | 🟡 已修复 | `_extract_latest_user_input` 已统一为 `agents/utils.py` 公共函数，兼容 LangGraph 1.x BaseMessage |
+| Pydantic Config 弃用 | 🟢 已修复 | 升级为 `SettingsConfigDict` |
+| SQLite Checkpointer | 🟡 降级 | LangGraph 1.x 中 `SqliteSaver.from_conn_string()` 返回 context manager，默认回退到 `InMemorySaver`。如需 SQLite 持久化请使用 `demo_checkpoint.py` 手动管理 |
 
 ---
 

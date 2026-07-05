@@ -55,17 +55,14 @@
 
 ## 待办事项
 
-### 1. 评分归零问题（LangGraph 1.x messages reducer 兼容性）
-- **现象**：Step 2/3 评分显示 0，因为 `_extract_latest_user_input` 从 `add_messages` reducer 管理的 messages 中提取不到 user 消息
-- **原因**：LangGraph 1.x 的 `add_messages` reducer 改变了消息存储格式
-- **优先级**：低（规则引擎评分仍正常工作，仅 LLM 通道受影响）
-- **方案**：在 scoring_node 中增加对 `add_messages` reducer 格式的兼容处理
+### ~~1. 评分归零问题（LangGraph 1.x messages reducer 兼容性）~~ ✅ 已修复
+- **修复方案**：`_extract_latest_user_input` 抽取为 `agents/utils.py` 公共函数，统一处理 dict 和 BaseMessage 两种格式
+- **影响范围**：correction_node、scoring_node 均使用公共函数
 
-### 2. Pydantic config 类写法弃用警告
-- `config/settings.py` 使用 `class Config` 而非 `ConfigDict`
-- **方案**：后续升级到 `model_config = ConfigDict(env_file=".env")`
+### ~~2. Pydantic config 类写法弃用警告~~ ✅ 已修复
+- **修复方案**：升级为 `model_config = SettingsConfigDict(env_file=".env")`
 
-### 3. SQLite Checkpointer 初始化失败
-- `langgraph-checkpoint-sqlite` 3.x 的 `from_conn_string` 返回 async context manager
-- 当前 `graph_builder.py` 用 `__enter__()` 同步进入，不兼容
-- **方案**：改用 MemorySaver（当前已自动回退），或升级 checkpointer 初始化方式
+### ~~3. SQLite Checkpointer 初始化失败~~ 🟡 降级处理
+- **现状**：`langgraph-checkpoint-sqlite` 3.x 的 `from_conn_string` 返回 async context manager
+- **处理**：默认回退到 `InMemorySaver`，`demo_checkpoint.py` 中保留手动管理方式
+- **后续**：如需生产级 SQLite 持久化，可在异步上下文中使用 `AsyncSqliteSaver` + async context manager

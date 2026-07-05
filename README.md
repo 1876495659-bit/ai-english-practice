@@ -108,6 +108,10 @@ streamlit run ui/main.py --server.port 8501
 - [x] Checkpoint 持久化（SQLite）
 - [x] FastAPI RESTful API
 - [x] MVP Web UI（Streamlit 三栏布局）
-- [ ] Prompt 文件抽取（从 Node 迁移到 prompts/ 目录）
-- [ ] 单元测试覆盖
+- [x] Prompt 文件抽取（`prompts_loader.py` + 3 个模板文件已接入 Node）
+- [x] 单元测试覆盖（98/98 通过 — 规则引擎、评分算法、图构建、API 端点、工具函数）
+- [x] Python 3.14 兼容性修复
+- [x] LangGraph 1.x 兼容修复（`extract_latest_user_input` 处理 BaseMessage + InMemorySaver）
+- [x] Pydantic v2 配置升级（`SettingsConfigDict`）
+- [x] SQLite Checkpointer 回退策略完善
 - [ ] ASR/TTS 集成

@@ -32,6 +32,7 @@ from typing import Any
 
 from agents.llm_client import call_llm_json
 from agents.prompts_loader import load_prompt
+from agents.utils import extract_latest_user_input
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,7 @@ async def scoring_node(state: dict[str, Any]) -> dict[str, Any] | Any:
         - 正常结束：返回 State 增量更新 dict
         - 需要循环：返回 langgraph.types.Command（带 goto="conversation"）
     """
-    user_input = _extract_latest_user_input(state.get("messages", []))
+    user_input = extract_latest_user_input(state.get("messages", []))
 
     if not user_input:
         return _empty_return(state)
@@ -145,22 +146,6 @@ async def scoring_node(state: dict[str, Any]) -> dict[str, Any] | Any:
         "skill_progress": progress_updates,
         **difficulty_adjustment,
     }
-
-
-def _extract_latest_user_input(messages: list) -> str:
-    """从消息列表中提取最新的用户输入（兼容 dict 和 LangChain BaseMessage）"""
-    for msg in reversed(messages):
-        if isinstance(msg, dict):
-            if msg.get("role") == "user":
-                return msg.get("content", "").strip()
-        else:
-            role = getattr(msg, "type", None)
-            if role == "human":
-                return getattr(msg, "content", "").strip()
-            content = getattr(msg, "content", None) or getattr(msg, "_content", None)
-            if content and role in ("human", "user"):
-                return str(content).strip()
-    return ""
 
 
 def _empty_return(state: dict[str, Any]) -> dict[str, Any]:
