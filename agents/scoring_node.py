@@ -84,6 +84,13 @@ async def scoring_node(state: dict[str, Any]) -> dict[str, Any] | Any:
     """
     user_input = extract_latest_user_input(state.get("messages", []))
 
+    # LangGraph 1.x add_messages reducer 可能在图管道中丢失 user 消息，
+    # fallback 到 correction_node 已经提取的用户输入
+    if not user_input:
+        correction = state.get("correction", {})
+        if isinstance(correction, dict):
+            user_input = correction.get("original", "").strip()
+
     if not user_input:
         return _empty_return(state)
 
