@@ -73,7 +73,7 @@ User Input → State → [scenario → conversation → correction → scoring] 
 
 ## 当前开发阶段（实时更新此阶段）
 
-**Stage 8**：Bug Fixes & Test Hardening
+**Stage 8**：Bug Fixes & Test Hardening（LangGraph 1.x 全面兼容）
 - ✅ Stage 4：LLM 真实接入（统一 LLM 调用层 + mock 回退 + 双通道设计 + 细粒度开关 + 错误隔离）
 - ✅ Stage 5：自适应学习（skill_progress 能力追踪 + 难度自适应调整 + Command 条件路由 Loop Training）
 - ✅ Stage 6：SQLite Checkpointer 持久化（session 可恢复 + 进程重启恢复 + 中断续练）+ FastAPI RESTful API
@@ -83,10 +83,12 @@ User Input → State → [scenario → conversation → correction → scoring] 
   - `correction_node.py` 死代码清理（重复 return ""）
   - `config/settings.py` 升级为 pydantic v2 `SettingsConfigDict`
   - `graph_builder.py` SQLite Checkpointer 回退策略完善（InMemorySaver 默认）
+  - **LangGraph 1.x add_messages reducer 行为变化修复**：scoring_node 优先从 `correction.original` 获取用户输入（correction 字段在 checkpoint 中保存正常），再 fallback 到 messages 字段
   - 单元测试 98/98 通过（test_rule_engine / test_scoring_node / test_graph_builder / test_api / test_utils）
   - pytest.ini 配置 + pytest-asyncio 依赖
+  - 自定义 `_append_messages` reducer 替代 LangGraph 内置 `add_messages`
 - ✅ Python 3.14 兼容性修复
-- ✅ LangGraph 1.x 全面兼容（InMemorySaver、CompiledStateGraph、BaseMessage 格式）
+- ✅ LangGraph 1.x 全面兼容（InMemorySaver、CompiledStateGraph、BaseMessage 格式、messages reducer 修复）
 
 ---
 

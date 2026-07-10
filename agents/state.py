@@ -14,16 +14,32 @@ from __future__ import annotations
 
 from typing import Annotated, Any, TypedDict
 
-from langgraph.graph.message import add_messages
+
+# ============================================================================
+# Reducer 定义
+# ============================================================================
+
+
+def _append_messages(left: list, right: list) -> list:
+    """
+    手动追加消息的 reducer。
+
+    替代 LangGraph 内置的 add_messages，避免 LangGraph 1.x 中
+    增量更新与 checkpoint 恢复时的合并问题。
+    直接将 right 追加到 left 末尾。
+    """
+    result = list(left) if left else []
+    if right:
+        result.extend(right)
+    return result
 
 
 # ============================================================================
 # Reducer 类型别名
 # ============================================================================
 
-# add_messages 将新消息追加到现有消息列表
-# 这是 LangGraph 内置的消息管理器
-Messages = Annotated[list[dict], add_messages]
+# 使用自定义 _append_messages 替代 LangGraph 内置的 add_messages
+Messages = Annotated[list[dict], _append_messages]
 
 
 # ============================================================================
@@ -84,7 +100,7 @@ class EnglishTutorState(TypedDict, total=False):
     新增 Node 只需在 State 中添加对应字段。
 
     字段说明：
-    - messages: 对话历史（由 LangGraph add_messages reducer 管理）
+    - messages: 对话历史（由自定义 _append_messages reducer 管理）
     - scenario/difficulty/level: 场景配置
     - turn: 当前对话轮次
     - retry_count: 当前重试计数（用于 Loop Training）
@@ -98,6 +114,8 @@ class EnglishTutorState(TypedDict, total=False):
     """
 
     # ===== 对话历史（LangGraph 消息管理）=====
+    # 使用自定义 _append_messages reducer，避免 LangGraph 1.x add_messages
+    # 在图管道中与 checkpoint 合并时的行为差异
     messages: Messages
 
     # ===== 场景配置 =====

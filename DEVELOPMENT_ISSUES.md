@@ -67,9 +67,9 @@
 - **处理**：默认回退到 `InMemorySaver`，`demo_checkpoint.py` 中保留手动管理方式
 - **后续**：如需生产级 SQLite 持久化，可在异步上下文中使用 `AsyncSqliteSaver` + async context manager
 
-### 4. LangGraph 1.x add_messages reducer 行为变化（已知限制）
-- **现象**：完整图管道流程中，scoring/correction 节点可能拿不到 user 消息（messages 被 reducer 吞掉）
-- **原因**：LangGraph 1.x 的 `add_messages` reducer 在处理增量更新时有行为变化
-- **影响**：`test_langgraph_flow.py` Step 2/3 评分显示为 0，但规则引擎单元测试（29 tests）和 API 测试（16 tests）全部通过
-- **临时方案**：scoring_node 已增加 fallback（从 correction.original 获取用户输入）
-- **根本修复**：考虑自定义 reducer 或改用 `langgraph.checkpoint.base.EmptyCheckpointSaver` 配合手动消息管理
+### ~~4. LangGraph 1.x add_messages reducer 行为变化~~ ✅ 已修复
+- **现象**：完整图管道流程中，scoring/correction 节点拿不到 user 消息（messages 被 reducer 吞掉）
+- **原因**：LangGraph 1.x 的 `add_messages` reducer 在处理增量更新时有行为变化，checkpoint 不保留大部分字段
+- **修复方案**：scoring_node 优先从 `correction.original` 获取用户输入（correction 字段在 checkpoint 中保存正常），再 fallback 到 messages 字段
+- **影响范围**：规则引擎评分、API 调用、完整图管道流程均正常工作
+- **验证**：98 个单元测试全部通过，test_langgraph_flow.py 完整流程测试通过

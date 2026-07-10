@@ -209,7 +209,11 @@ async def correction_node(state: dict[str, Any]) -> dict[str, Any]:
         State 增量更新 dict
     """
     messages: list = state.get("messages", [])
-    user_input = extract_latest_user_input(messages)
+    # LangGraph 1.x 的 add_messages reducer 在图管道中可能导致 messages 丢失，
+    # 优先从 state.user_input 获取（由 API 层或上游节点注入）
+    user_input = state.get("user_input", "").strip()
+    if not user_input:
+        user_input = extract_latest_user_input(messages)
 
     if not user_input:
         return {"correction": _empty_correction("没有检测到用户输入")}

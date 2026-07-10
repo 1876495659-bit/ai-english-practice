@@ -82,14 +82,16 @@ async def scoring_node(state: dict[str, Any]) -> dict[str, Any] | Any:
         - 正常结束：返回 State 增量更新 dict
         - 需要循环：返回 langgraph.types.Command（带 goto="conversation"）
     """
-    user_input = extract_latest_user_input(state.get("messages", []))
+    # LangGraph 1.x 消息管理策略：
+    # 由于 checkpoint 不保留大部分字段（如 user_input），
+    # 优先从 correction.original 获取（correction_node 已成功提取并持久化）
+    correction = state.get("correction", {})
+    if isinstance(correction, dict):
+        user_input = correction.get("original", "").strip()
 
-    # LangGraph 1.x add_messages reducer 可能在图管道中丢失 user 消息，
-    # fallback 到 correction_node 已经提取的用户输入
+    # fallback 到 messages 字段（兼容直接 Node 调用场景）
     if not user_input:
-        correction = state.get("correction", {})
-        if isinstance(correction, dict):
-            user_input = correction.get("original", "").strip()
+        user_input = extract_latest_user_input(state.get("messages", []))
 
     if not user_input:
         return _empty_return(state)
