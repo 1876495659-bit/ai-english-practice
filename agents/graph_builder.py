@@ -62,6 +62,7 @@ from agents.state import EnglishTutorState
 
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.graph import END, StateGraph
+from langgraph.graph.state import CompiledStateGraph
 
 logger = logging.getLogger(__name__)
 
@@ -130,9 +131,9 @@ def get_checkpointer():
 # ============================================================================
 
 
-def build_graph(checkpointer=None) -> StateGraph:
+def build_graph(checkpointer=None) -> CompiledStateGraph:
     """
-    构建 LangGraph StateGraph
+    构建并编译 LangGraph StateGraph
 
     关键设计：
     - scoring_node 返回 Command 对象来控制路由
@@ -186,10 +187,10 @@ def build_graph(checkpointer=None) -> StateGraph:
 # 全局图实例（单例懒加载）
 # ============================================================================
 
-_app_instance: Optional[StateGraph] = None
+_app_instance: Optional[CompiledStateGraph] = None
 
 
-def get_graph() -> StateGraph:
+def get_graph() -> CompiledStateGraph:
     """
     获取编译好的 LangGraph 应用实例（单例）
 

@@ -73,3 +73,23 @@
 - **修复方案**：scoring_node 优先从 `correction.original` 获取用户输入（correction 字段在 checkpoint 中保存正常），再 fallback 到 messages 字段
 - **影响范围**：规则引擎评分、API 调用、完整图管道流程均正常工作
 - **验证**：98 个单元测试全部通过，test_langgraph_flow.py 完整流程测试通过
+
+---
+
+## Stage 9 修复记录（2026-07-10）
+
+### Bug 5: correction_node.py 孤立 return 死代码块（L249-263）✅ 已修复
+- **现象**：`correction_node()` 函数结束后有一段不属于任何函数的孤立 `return { ... }` 语句
+- **原因**：之前重构留下的残留代码
+- **修复**：删除 L249-263 的死代码块
+- **验证**：97/97 测试通过
+
+### Bug 6: graph_builder.py 返回值类型标注错误 ✅ 已修复
+- **现象**：`build_graph()` 返回 `graph.compile(...)` → `CompiledStateGraph`，但标注为 `StateGraph`
+- **影响**：类型检查工具会报错，IDE 自动补全不正确
+- **修复**：
+  - 导入 `CompiledStateGraph`
+  - `build_graph()` 返回类型改为 `CompiledStateGraph`
+  - `_app_instance` 类型改为 `Optional[CompiledStateGraph]`
+  - `get_graph()` 返回类型改为 `CompiledStateGraph`
+- **验证**：97/97 测试通过

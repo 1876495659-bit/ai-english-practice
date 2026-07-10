@@ -250,21 +250,6 @@ async def correction_node(state: dict[str, Any]) -> dict[str, Any]:
 
 # ============================================================================
 # LLM 纠错通道
-    return {
-        "original": "",
-        "errors": [],
-        "error_details": [],
-        "corrected": "",
-        "suggestion": "",
-        "polished": "",
-        "explanation": reason,
-        "has_errors": False,
-        "polish_level": "basic",
-    }
-
-
-# ============================================================================
-# LLM 纠错通道
 # ============================================================================
 
 

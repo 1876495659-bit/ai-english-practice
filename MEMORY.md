@@ -73,7 +73,10 @@ User Input → State → [scenario → conversation → correction → scoring] 
 
 ## 当前开发阶段（实时更新此阶段）
 
-**Stage 8**：Bug Fixes & Test Hardening（LangGraph 1.x 全面兼容）
+**Stage 9**：Bug Fixes（correction_node.py 死代码 + graph_builder.py 类型标注）
+- ✅ correction_node.py L249-263 孤立 return 死代码块删除
+- ✅ graph_builder.py 返回值类型修正：`StateGraph` → `CompiledStateGraph`（build_graph / get_graph / _app_instance）
+- 🟡 SQLite Checkpointer 降级暂留（需 async context manager 重构）
 - ✅ Stage 4：LLM 真实接入（统一 LLM 调用层 + mock 回退 + 双通道设计 + 细粒度开关 + 错误隔离）
 - ✅ Stage 5：自适应学习（skill_progress 能力追踪 + 难度自适应调整 + Command 条件路由 Loop Training）
 - ✅ Stage 6：SQLite Checkpointer 持久化（session 可恢复 + 进程重启恢复 + 中断续练）+ FastAPI RESTful API
