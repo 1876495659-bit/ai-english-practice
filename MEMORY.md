@@ -47,6 +47,12 @@ User Input → State → [scenario → conversation → correction → scoring] 
 ### 6. 上传
   上传commits并同步到github上
 
+### 7. SQLite Checkpointer 生产化（Stage 9c）
+  - 使用 AsyncSqliteSaver 实现真正的会话持久化
+  - 数据库文件：data/checkpoints.db
+  - 连接生命周期由 FastAPI lifespan 管理
+  - 测试环境通过 CHECKPOINT_DB_PATH=:memory: 回退到 MemorySaver
+
 ---
 
 ## Node 职责定义
