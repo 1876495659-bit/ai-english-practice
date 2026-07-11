@@ -73,10 +73,16 @@ User Input → State → [scenario → conversation → correction → scoring] 
 
 ## 当前开发阶段（实时更新此阶段）
 
-**Stage 9**：Bug Fixes（correction_node.py 死代码 + graph_builder.py 类型标注）
+**Stage 9c**：SQLite Checkpointer 生产化（AsyncSqliteSaver + FastAPI lifespan）
 - ✅ correction_node.py L249-263 孤立 return 死代码块删除
-- ✅ graph_builder.py 返回值类型修正：`StateGraph` → `CompiledStateGraph`（build_graph / get_graph / _app_instance）
-- 🟡 SQLite Checkpointer 降级暂留（需 async context manager 重构）
+- ✅ graph_builder.py 返回值类型修正：`StateGraph` → `CompiledStateGraph`
+- ✅ SQLite Checkpointer 生产化：手动管理 aiosqlite 连接生命周期
+  - `graph_builder.py`：新增 `_create_sqlite_checkpointer()`（async）、`close_sqlite_checkpointer()`、`get_sqlite_checkpointer()`
+  - `api/main.py`：用 `@asynccontextmanager lifespan` 替代已弃用的 `@app.on_event("startup")`
+  - 原理：`AsyncSqliteSaver.from_conn_string()` 是 context manager（退出关连接），改为手动 `aiosqlite.connect()` + `await saver.setup()`，连接在 lifespan startup 时创建、shutdown 时关闭
+  - 数据库文件：`data/checkpoints.db`（自动创建目录）
+  - 测试环境通过 `CHECKPOINT_DB_PATH=:memory:` 环境变量回退到 MemorySaver
+- ✅ 补充单元测试 52 个（conversation/scenario/prompts/llm_client），总计 149/149 通过
 - ✅ Stage 4：LLM 真实接入（统一 LLM 调用层 + mock 回退 + 双通道设计 + 细粒度开关 + 错误隔离）
 - ✅ Stage 5：自适应学习（skill_progress 能力追踪 + 难度自适应调整 + Command 条件路由 Loop Training）
 - ✅ Stage 6：SQLite Checkpointer 持久化（session 可恢复 + 进程重启恢复 + 中断续练）+ FastAPI RESTful API

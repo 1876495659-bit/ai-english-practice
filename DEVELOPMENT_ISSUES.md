@@ -62,10 +62,14 @@
 ### ~~2. Pydantic config 类写法弃用警告~~ ✅ 已修复
 - **修复方案**：升级为 `model_config = SettingsConfigDict(env_file=".env")`
 
-### ~~3. SQLite Checkpointer 初始化失败~~ 🟡 降级处理
+### ~~3. SQLite Checkpointer 初始化失败~~ ✅ 已修复（Stage 9c）
 - **现状**：`langgraph-checkpoint-sqlite` 3.x 的 `from_conn_string` 返回 async context manager
-- **处理**：默认回退到 `InMemorySaver`，`demo_checkpoint.py` 中保留手动管理方式
-- **后续**：如需生产级 SQLite 持久化，可在异步上下文中使用 `AsyncSqliteSaver` + async context manager
+- **处理**：手动管理 aiosqlite 连接生命周期
+  - 应用启动时：`aiosqlite.connect()` → `AsyncSqliteSaver(conn)` → `await saver.setup()`
+  - 应用关闭时：`await conn.close()`
+  - FastAPI lifespan 事件替代已弃用的 `@app.on_event("startup")`
+- **数据库文件**：`data/checkpoints.db`（自动创建目录）
+- **测试兼容**：`CHECKPOINT_DB_PATH=:memory:` 环境变量回退到 MemorySaver
 
 ### ~~4. LangGraph 1.x add_messages reducer 行为变化~~ ✅ 已修复
 - **现象**：完整图管道流程中，scoring/correction 节点拿不到 user 消息（messages 被 reducer 吞掉）

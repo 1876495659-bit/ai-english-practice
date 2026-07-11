@@ -19,7 +19,7 @@
 - **智能纠错**：规则引擎 + LLM 双通道，4 层语法检测
 - **四维评分**：流利度 / 语法 / 词汇 / 自然度
 - **自适应学习**：skill_progress 追踪 + 难度自动调整 + Loop Training
-- **会话持久化**：SQLite Checkpoint，支持进程重启恢复
+- **会话持久化**：SQLite Checkpoint（AsyncSqliteSaver），支持进程重启恢复
 - **多 LLM 支持**：OpenAI / Anthropic / Groq，细粒度开关控制
 
 ## 项目结构

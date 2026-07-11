@@ -23,21 +23,77 @@ API 端点：
 from __future__ import annotations
 
 import logging
+from contextlib import asynccontextmanager
 from typing import Any, Optional
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
-from agents.graph_builder import get_graph, reset_graph
+from agents.graph_builder import (
+    build_graph,
+    close_sqlite_checkpointer,
+    get_graph,
+    reset_graph,
+)
 from agents.state import EnglishTutorState
 
 logger = logging.getLogger(__name__)
+
+
+# ============================================================================
+# Lifespan — 替代 on_event("startup"/"shutdown")
+# ============================================================================
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """
+    FastAPI lifespan 事件处理器。
+
+    替代已弃用的 @app.on_event("startup") / @app.on_event("shutdown")。
+
+    启动阶段：
+    1. 初始化 SQLite Checkpointer（创建连接、建表）
+    2. 构建 LangGraph
+
+    关闭阶段：
+    1. 关闭 SQLite 连接，释放资源
+
+    原理：
+    - SQLite 连接必须在应用整个生命周期内保持打开
+    - 不能在每次请求时创建/关闭连接（性能差 + 并发问题）
+    - lifespan 确保连接在第一次请求前就绪，在退出前正确释放
+    """
+    # --- Startup ---
+    logger.info("[Lifespan] Initializing SQLite Checkpointer...")
+    try:
+        from agents.graph_builder import _create_sqlite_checkpointer
+        await _create_sqlite_checkpointer()
+        graph = get_graph()
+        cp_name = type(graph.checkpointer).__name__ if graph.checkpointer else "None"
+        print(f"[API] AI English Tutor v6 started (Checkpointer: {cp_name})")
+    except Exception as e:
+        logger.error(f"[Lifespan] Failed to initialize: {e}")
+        # 即使初始化失败，也要让应用启动（降级到 MemorySaver）
+        print(f"[API] AI English Tutor v6 started (Checkpointer: MemorySaver fallback)")
+
+    yield
+
+    # --- Shutdown ---
+    logger.info("[Lifespan] Shutting down...")
+    await close_sqlite_checkpointer()
+
+
+# ============================================================================
+# FastAPI 应用
+# ============================================================================
 
 # 创建 FastAPI 应用
 app = FastAPI(
     title="AI English Tutor",
     description="AI英语口语陪练系统 - LangGraph StateGraph 架构（持久化会话）",
     version="6.0.0",
+    lifespan=lifespan,
 )
 
 
@@ -169,17 +225,6 @@ def _make_initial_state() -> dict[str, Any]:
             "improvement_trajectory": [],
         },
     }
-
-
-# ========== 生命周期 ==========
-
-
-@app.on_event("startup")
-async def startup() -> None:
-    """应用启动时构建 LangGraph"""
-    graph = get_graph()
-    cp_name = type(graph.checkpointer).__name__ if graph.checkpointer else "None"
-    print(f"[API] AI English Tutor v6 started (Checkpointer: {cp_name})")
 
 
 # ========== API 路由 ==========
