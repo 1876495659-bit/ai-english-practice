@@ -26,7 +26,9 @@ import logging
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request, UploadFile, Form
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from agents.graph_builder import (
@@ -97,7 +99,41 @@ app = FastAPI(
 )
 
 
-# ========== 请求/响应模型 ==========
+# ============================================================================
+# 全局异常处理器
+# ============================================================================
+
+
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(
+    request: Request, exc: RequestValidationError
+) -> JSONResponse:
+    """处理 Pydantic 验证错误"""
+    errors = []
+    for error in exc.errors():
+        loc = " → ".join(str(l) for l in error.get("loc", []))
+        msg = error.get("msg", "")
+        errors.append(f"{loc}: {msg}")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": "请求参数验证失败", "errors": errors},
+    )
+
+
+@app.exception_handler(Exception)
+async def general_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    """处理未捕获的异常，避免暴露内部堆栈"""
+    logger.error(f"[API] Unhandled exception on {request.url.path}: {exc}", exc_info=True)
+    return JSONResponse(
+        status_code=500,
+        content={
+            "detail": "服务器内部错误",
+            "message": str(exc)[:200] if str(exc) else "Unknown error",
+        },
+    )
+
+
+# ========== 会话存储 ==========
 
 
 class StartSessionRequest(BaseModel):
@@ -106,10 +142,48 @@ class StartSessionRequest(BaseModel):
     difficulty: str = "medium"
     level: str = "intermediate"
 
+    model_config = {"extra": "forbid"}
+
+    @property
+    def validated_scenario(self) -> str:
+        """验证场景值，非法时回退到默认"""
+        valid_scenarios = {"interview", "restaurant", "travel", "meeting", "daily"}
+        if self.scenario not in valid_scenarios:
+            return "daily"
+        return self.scenario
+
+    @property
+    def validated_difficulty(self) -> str:
+        """验证难度值，非法时回退到默认"""
+        valid_difficulties = {"easy", "medium", "hard"}
+        if self.difficulty not in valid_difficulties:
+            return "medium"
+        return self.difficulty
+
+    @property
+    def validated_level(self) -> str:
+        """验证水平值，非法时回退到默认"""
+        valid_levels = {"beginner", "intermediate", "advanced"}
+        if self.level not in valid_levels:
+            return "intermediate"
+        return self.level
+
 
 class ChatRequest(BaseModel):
     """聊天请求"""
     message: str
+
+    model_config = {"extra": "forbid"}
+
+    @property
+    def validated_message(self) -> str:
+        """验证消息内容"""
+        stripped = self.message.strip()
+        if not stripped:
+            raise ValueError("消息不能为空")
+        if len(stripped) > 500:
+            raise ValueError("消息长度不能超过 500 字符")
+        return stripped
 
 
 class ChatResponse(BaseModel):
@@ -176,28 +250,10 @@ def _is_session_active(thread_id: str) -> bool:
     """
     检查某个 thread 是否有活跃状态。
 
-    如果 checkpointer 中存在该 thread 的 checkpoint 且 session_active=True，
-    则认为会话活跃。
+    简化逻辑：只要 _sessions 字典中有该 thread_id 的映射，
+    即认为会话活跃（实际状态由 LangGraph Checkpointer 管理）。
     """
-    graph = get_graph()
-    if not graph.checkpointer:
-        # 没有 checkpointer，无法判断，假设活跃
-        return True
-
-    try:
-        # 列出该 thread 的所有 checkpoints
-        snapshots = list(graph.checkpointer.list({"configurable": {"thread_id": thread_id}}))
-        if not snapshots:
-            return False
-
-        # 检查最新的 checkpoint 是否标记为活跃
-        latest = snapshots[-1]
-        if hasattr(latest, 'config') and 'thread_id' in latest.config:
-            return True
-        return True
-    except Exception as e:
-        logger.debug(f"[Session] Failed to check activity for {thread_id}: {e}")
-        return False
+    return thread_id in _sessions.values()
 
 
 def _make_initial_state() -> dict[str, Any]:
@@ -266,11 +322,11 @@ async def start_session(request: StartSessionRequest) -> dict[str, Any]:
     """
     session_id, thread_id = _get_or_create_session()
 
-    # 构建初始状态
+    # 构建初始状态（使用验证后的值）
     initial_state: EnglishTutorState = {
-        "scenario": request.scenario,
-        "difficulty": request.difficulty,
-        "level": request.level,
+        "scenario": request.validated_scenario,
+        "difficulty": request.validated_difficulty,
+        "level": request.validated_level,
         "scenario_goal": "提升日常英语交流的流利度和自然度",
         "ai_reply": "",
         "correction": {},
@@ -346,27 +402,26 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     # 构建 config（thread_id 用于 checkpoint 持久化）
     config = {"configurable": {"thread_id": thread_id}}
-
-    # 获取当前状态（从 checkpointer 恢复）
     graph = get_graph()
-    current_state: Optional[dict[str, Any]] = None
 
-    if graph.checkpointer:
-        try:
-            # 列出该 thread 的所有 checkpoints，获取最新的
-            snapshots = list(graph.checkpointer.list(config))
-            if snapshots:
-                # 取最后一个（最新的）checkpoint
-                latest = snapshots[-1]
-                # channel_values 包含当前所有 state 字段
-                if hasattr(latest, 'channel_values'):
-                    current_state = dict(latest.channel_values)
-                elif isinstance(latest, dict) and 'channel_values' in latest:
-                    current_state = dict(latest['channel_values'])
-        except Exception as e:
-            logger.warning(f"[Chat] Failed to restore state from checkpoint: {e}")
+    # 将用户消息注入 state（使用验证后的消息）
+    try:
+        validated_msg = request.validated_message
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
-    # 如果无法恢复（新 session 或首次调用），创建新状态
+    # 先获取当前状态（从 checkpoint 恢复）
+    try:
+        state_snapshot = await graph.aget_state(config)
+        if state_snapshot and state_snapshot.values:
+            current_state = dict(state_snapshot.values)
+        else:
+            current_state = None
+    except Exception as e:
+        logger.warning(f"[Chat] Failed to get state: {e}")
+        current_state = None
+
+    # 如果无法恢复，创建新状态
     if not current_state:
         current_state = _make_initial_state()
         current_state["session_active"] = True
@@ -376,7 +431,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     # 将用户消息注入 state
     current_messages = list(current_state.get("messages", []))
-    current_messages.append({"role": "user", "content": request.message})
+    current_messages.append({"role": "user", "content": validated_msg})
     current_state["messages"] = current_messages
 
     # 运行图（包含条件路由，状态自动持久化到 checkpoint）
@@ -446,13 +501,14 @@ async def get_session() -> dict[str, Any]:
 
     if graph.checkpointer:
         try:
-            snapshots = list(graph.checkpointer.list(config))
+            snapshots = [s async for s in graph.checkpointer.alist(config)]
             if snapshots:
                 latest = snapshots[-1]
-                if hasattr(latest, 'channel_values'):
-                    state = dict(latest.channel_values)
-                elif isinstance(latest, dict) and 'channel_values' in latest:
-                    state = dict(latest['channel_values'])
+                cv = None
+                if hasattr(latest, 'checkpoint') and latest.checkpoint:
+                    cv = latest.checkpoint.get('channel_values')
+                if cv is not None:
+                    state = dict(cv)
         except Exception as e:
             logger.warning(f"[Session] Failed to load state: {e}")
 
@@ -513,7 +569,7 @@ async def delete_session(session_id: str) -> DeleteSessionResponse:
     if graph.checkpointer:
         try:
             # 清除该 thread 的所有 checkpoints
-            for snapshot in graph.checkpointer.list({"configurable": {"thread_id": thread_id}}):
+            async for snapshot in graph.checkpointer.alist({"configurable": {"thread_id": thread_id}}):
                 pass  # LangGraph 的 checkpointer 目前没有直接删除 API
                 # 如果需要彻底删除，可以在 SQLite 层面操作
         except Exception as e:
@@ -550,3 +606,110 @@ async def end_session() -> dict[str, str]:
             logger.warning(f"[Session] Failed to mark session inactive: {e}")
 
     return {"message": "Session ended"}
+
+
+# ============================================================================
+# ASR / TTS 端点
+# ============================================================================
+
+
+class TranscribeRequest(BaseModel):
+    """语音识别请求"""
+    language: str = "en"
+
+
+class SynthesizeRequest(BaseModel):
+    """语音合成请求"""
+    text: str
+    voice: Optional[str] = None
+    speed: float = 1.0
+
+
+@app.post("/api/asr/transcribe")
+async def transcribe(language: str = Form("en"), file: UploadFile = ...):
+    """
+    语音转文本（ASR）
+
+    上传音频文件，返回识别出的英文文本。
+    支持 WAV/MP3/M4A/OGG 格式。
+    """
+    if not file or not file.filename:
+        raise HTTPException(status_code=400, detail="请上传音频文件")
+
+    try:
+        from agents.asr import transcribe_audio
+
+        audio_bytes = await file.read()
+        if not audio_bytes:
+            raise HTTPException(status_code=400, detail="音频文件为空")
+
+        text = await transcribe_audio(audio_bytes, language=language)
+
+        return {
+            "status": "success",
+            "text": text,
+            "language": language,
+            "audio_size": len(audio_bytes),
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[ASR] Transcription failed: {e}")
+        raise HTTPException(status_code=500, detail=f"语音识别失败: {str(e)}")
+
+
+@app.post("/api/tts/synthesize")
+async def synthesize(request: SynthesizeRequest):
+    """
+    文本转语音（TTS）
+
+    将英文文本转换为音频并返回。
+    支持自定义声音和语速。
+    """
+    if not request.text or not request.text.strip():
+        raise HTTPException(status_code=400, detail="待转换的文本不能为空")
+
+    try:
+        from agents.tts import synthesize_speech
+
+        audio_bytes = await synthesize_speech(
+            text=request.text,
+            voice=request.voice,
+            speed=request.speed,
+        )
+
+        # 返回 base64 编码的音频（方便前端直接播放）
+        import base64
+        encoded = base64.b64encode(audio_bytes).decode("ascii")
+
+        return {
+            "status": "success",
+            "audio_base64": encoded,
+            "voice": request.voice or "alloy",
+            "speed": request.speed,
+            "audio_size": len(audio_bytes),
+        }
+
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        logger.error(f"[TTS] Synthesis failed: {e}")
+        raise HTTPException(status_code=500, detail=f"语音合成失败: {str(e)}")
+
+
+@app.get("/api/tts/voices")
+async def list_voices() -> dict[str, Any]:
+    """列出可用的 TTS 声音"""
+    return {
+        "voices": [
+            {"name": "alloy", "gender": "neutral", "description": "平衡中性声音"},
+            {"name": "echo", "gender": "male", "description": "温暖的男性声音"},
+            {"name": "fable", "gender": "male", "description": "英式口音的男性声音"},
+            {"name": "onyx", "gender": "male", "description": "沉稳的男性声音"},
+            {"name": "nova", "gender": "female", "description": "友好的女性声音"},
+            {"name": "shimmer", "gender": "female", "description": "轻快的女性声音"},
+        ],
+        "speed_range": [0.25, 4.0],
+        "default_voice": "alloy",
+    }

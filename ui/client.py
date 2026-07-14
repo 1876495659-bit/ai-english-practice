@@ -2,10 +2,12 @@
 API Client - 前端与后端 FastAPI 的通信层
 
 封装所有后端 API 调用，提供类型安全的接口。
+支持：聊天、会话管理、ASR 语音转文本、TTS 文本转语音。
 """
 
 from __future__ import annotations
 
+import base64
 import httpx
 from typing import Any, Optional
 
@@ -101,3 +103,58 @@ class APIClient:
     def delete_session(self, session_id: str) -> dict[str, Any]:
         """删除会话"""
         return self._post(f"/api/session/{session_id}", {})
+
+    # ========================================================================
+    # ASR — 语音转文本
+    # ========================================================================
+
+    def transcribe(self, audio_data: bytes, language: str = "en") -> dict[str, Any]:
+        """
+        上传音频数据，返回识别出的文本。
+
+        Args:
+            audio_data: 音频字节数据（WebM/WAV/MP3）
+            language: 语言代码，默认 "en"
+
+        Returns:
+            {"status": "success", "text": "...", "language": "en", "audio_size": 1234}
+        """
+        with httpx.Client(timeout=30) as client:
+            files = {"file": ("audio.webm", audio_data, "audio/webm")}
+            data = {"language": language}
+            resp = client.post(
+                f"{self.base_url}/api/asr/transcribe",
+                files=files,
+                data=data,
+                timeout=30,
+            )
+            resp.raise_for_status()
+            return resp.json()
+
+    # ========================================================================
+    # TTS — 文本转语音
+    # ========================================================================
+
+    def synthesize(self, text: str, voice: Optional[str] = None, speed: float = 1.0) -> dict[str, Any]:
+        """
+        将文本转换为音频，返回 base64 编码的音频数据。
+
+        Args:
+            text: 要合成的英文文本
+            voice: 声音选择（alloy/echo/fable/onyx/nova/shimmer）
+            speed: 语速（0.25~4.0）
+
+        Returns:
+            {"status": "success", "audio_base64": "...", "voice": "alloy", ...}
+        """
+        payload = {"text": text, "speed": speed}
+        if voice:
+            payload["voice"] = voice
+        return self._post("/api/tts/synthesize", payload)
+
+    def get_voices(self) -> dict[str, Any]:
+        """列出可用的 TTS 声音"""
+        with httpx.Client(timeout=10) as client:
+            resp = client.get(f"{self.base_url}/api/tts/voices", timeout=10)
+            resp.raise_for_status()
+            return resp.json()

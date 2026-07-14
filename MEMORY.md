@@ -3,7 +3,7 @@
 ## 项目目标
 本项目是一个基于 **LangGraph StateGraph** 多Agent协作的 AI 英语口语陪练系统，支持：
 - 多场景口语训练（面试 / 点餐 / 旅行 / 会议 / 日常）
-- 语音输入与输出（ASR + TTS，预留）
+- 语音输入与输出（ASR + TTS）
 - 智能纠错与表达优化
 - 口语能力四维评分与反馈
 
@@ -45,13 +45,13 @@ User Input → State → [scenario → conversation → correction → scoring] 
 - 替换 LLM provider（config/providers.py 工厂模式）
 
 ### 6. 上传
-  上传commits并同步到github上
+修改代码时候用中文上传commits并同步到github上
 
 ### 7. SQLite Checkpointer 生产化（Stage 9c）
-  - 使用 AsyncSqliteSaver 实现真正的会话持久化
-  - 数据库文件：data/checkpoints.db
-  - 连接生命周期由 FastAPI lifespan 管理
-  - 测试环境通过 CHECKPOINT_DB_PATH=:memory: 回退到 MemorySaver
+- 使用 AsyncSqliteSaver 实现真正的会话持久化
+- 数据库文件：data/checkpoints.db
+- 连接生命周期由 FastAPI lifespan 管理
+- 测试环境通过 CHECKPOINT_DB_PATH=:memory: 回退到 MemorySaver
 
 ---
 
@@ -79,45 +79,124 @@ User Input → State → [scenario → conversation → correction → scoring] 
 
 ## 当前开发阶段（实时更新此阶段）
 
-**Stage 9c**：SQLite Checkpointer 生产化（AsyncSqliteSaver + FastAPI lifespan）
-- ✅ correction_node.py L249-263 孤立 return 死代码块删除
-- ✅ graph_builder.py 返回值类型修正：`StateGraph` → `CompiledStateGraph`
-- ✅ SQLite Checkpointer 生产化：手动管理 aiosqlite 连接生命周期
-  - `graph_builder.py`：新增 `_create_sqlite_checkpointer()`（async）、`close_sqlite_checkpointer()`、`get_sqlite_checkpointer()`
-  - `api/main.py`：用 `@asynccontextmanager lifespan` 替代已弃用的 `@app.on_event("startup")`
-  - 原理：`AsyncSqliteSaver.from_conn_string()` 是 context manager（退出关连接），改为手动 `aiosqlite.connect()` + `await saver.setup()`，连接在 lifespan startup 时创建、shutdown 时关闭
-  - 数据库文件：`data/checkpoints.db`（自动创建目录）
-  - 测试环境通过 `CHECKPOINT_DB_PATH=:memory:` 环境变量回退到 MemorySaver
-- ✅ 补充单元测试 52 个（conversation/scenario/prompts/llm_client），总计 149/149 通过
-- ✅ Stage 4：LLM 真实接入（统一 LLM 调用层 + mock 回退 + 双通道设计 + 细粒度开关 + 错误隔离）
-- ✅ Stage 5：自适应学习（skill_progress 能力追踪 + 难度自适应调整 + Command 条件路由 Loop Training）
-- ✅ Stage 6：SQLite Checkpointer 持久化（session 可恢复 + 进程重启恢复 + 中断续练）+ FastAPI RESTful API
-- ✅ Stage 7：MVP Web UI（Streamlit 三栏布局：场景选择 + 聊天窗口 + 评分面板）
-- ✅ Stage 8：Bug Fixes & Test Hardening
-  - `extract_latest_user_input` 抽取为公共函数 `agents/utils.py`，修复 LangGraph 1.x BaseMessage 兼容
-  - `correction_node.py` 死代码清理（重复 return ""）
-  - `config/settings.py` 升级为 pydantic v2 `SettingsConfigDict`
-  - `graph_builder.py` SQLite Checkpointer 回退策略完善（InMemorySaver 默认）
-  - **LangGraph 1.x add_messages reducer 行为变化修复**：scoring_node 优先从 `correction.original` 获取用户输入（correction 字段在 checkpoint 中保存正常），再 fallback 到 messages 字段
-  - 单元测试 98/98 通过（test_rule_engine / test_scoring_node / test_graph_builder / test_api / test_utils）
-  - pytest.ini 配置 + pytest-asyncio 依赖
-  - 自定义 `_append_messages` reducer 替代 LangGraph 内置 `add_messages`
-- ✅ Python 3.14 兼容性修复
-- ✅ LangGraph 1.x 全面兼容（InMemorySaver、CompiledStateGraph、BaseMessage 格式、messages reducer 修复）
+**Stage 9e**：Web UI 完整语音集成 + Docker 部署支持
+- ✅ Stage 9c：SQLite Checkpointer 生产化（AsyncSqliteSaver + FastAPI lifespan）
+- ✅ Stage 9d：ASR/TTS 语音集成 + API 增强
+  - `agents/asr.py`：OpenAI Whisper 语音转文本服务（含 mock 回退、语言检测）
+  - `agents/tts.py`：OpenAI TTS 文本转语音服务（支持 6 种声音、语速调节、批量合成）
+  - `api/main.py`：新增 `/api/asr/transcribe`、`/api/tts/synthesize`、`/api/tts/voices` 端点
+  - `api/main.py`：全局异常处理器（RequestValidationError + 通用 Exception）
+  - `api/main.py`：请求模型增强验证（场景/难度/水平校验、消息长度限制 500 字符、extra forbid）
+  - `config/settings.py`：新增 asr_enabled、asr_language、tts_enabled、tts_voice、tts_speed 配置项
+  - `requirements.txt`：添加 python-multipart 依赖（文件上传支持）
+  - `ui/main.py`：聊天输入区增加 🎤 语音输入按钮
+  - `setup.py`：交互式 .env 配置向导（选择 Provider → 填入 API Key → 生成配置）
+  - `conversation_node.py`：mock 回复从 3 轮扩展至 10 轮（5 场景 × 10 轮 = 50 条）
+- ✅ 单元测试 82/82 全部通过（test_api / test_rule_engine / test_scoring_node / test_graph_builder / test_langgraph_flow）
+- ✅ Stage 9e：Web UI 完整语音集成
+  - `ui/client.py`：新增 `transcribe()`（ASR 上传音频）、`synthesize()`（TTS 合成）、`get_voices()`（获取声音列表）
+  - `ui/main.py`：🎤 语音输入 — 点击录音 → MediaRecorder 采集 → POST `/api/asr/transcribe` → iframe 刷新父页面（URL 带 `_asr_result`）→ Streamlit 读取 query_params → 存入 session_state → 显示蓝色卡片 → 用户点击"发送"调用 client.chat() → 完整 conversation→correction→scoring 流程
+  - `ui/main.py`：🔊 TTS 播放 — 每条 AI 消息右侧显示播放按钮，点击调用 `/api/tts/synthesize` → base64 WAV → Audio API 播放
+  - `ui/main.py`：侧边栏新增语音设置 — TTS 声音选择（6 种）、语速滑块（0.5~2.0）
+- ✅ Bug 8 修复：ASR 结果回传（两步交互 + URL 刷新）
+  - 录音完成后 iframe 通过 `window.top.location.href` 刷新父页面携带 `_asr_result` query param
+  - Streamlit 读取后存入 session_state，在输入框上方显示蓝色卡片
+  - 用户点击 "✓ 发送" 或 "✗ 清除" 确认/丢弃
+- ✅ Bug 9 修复：会话持久化（`AsyncSqliteSaver` 异步调用修复）
+  - 将同步 `list()` 改为异步 `alist()`，解决 `Synchronous calls to AsyncSqliteSaver` 错误
+  - 使用 `graph.aget_state(config)` 替代手动解析 CheckpointTuple
+  - 修复 `_is_session_active()` 避免同步/异步混用
+  - 验证：三轮对话 turn=1→2→3，AI 回复逐轮变化，skill_progress 正常累积
+
+---
+
+## Agent 功能分析与测试状态
+
+### Scenario Node (`scenario_node.py`)
+- **功能**: 场景初始化、生成开场白、更新metadata
+- **结构**: 简单async函数，依赖`agents.scenarios` JSON配置
+- **测试状态**: ✅ 导入正常，逻辑完整
+- **关键代码**: turn==0时从`opening_lines`选开场白注入messages
+
+### Conversation Node (`conversation_node.py`)
+- **功能**: 根据场景和历史生成AI英语回复
+- **结构**: LLM调用 + mock回退（llm_enabled=False时使用）
+- **测试状态**: ✅ 双通道设计完整，mock回复覆盖5个场景×10轮次
+- **关键代码**: `_build_conversation_history`提取最近6轮对话上下文
+
+### Correction Node (`correction_node.py`)
+- **功能**: 语法纠错+表达优化（4层正则检测）
+- **结构**: 规则引擎（默认）+ LLM通道（可选）
+- **测试状态**: ✅ 规则引擎实现完整，包含：
+  - 基础语法（大小写、标点、句号缺失）
+  - 语法结构（主谓一致、冠词错误、不规则动词时态）
+  - 中式英语（25种常见模式）
+  - 表达升级（按难度层级替换词汇）
+- **关键数据**: `_IRREGULAR_VERBS`(50+)、`_CHINGLISH_PATTERNS`(25)、`_POLISH_UPGRADES`(50+)
+
+### Scoring Node (`scoring_node.py`)
+- **功能**: 四维评分（流利度/语法/词汇/自然度）+ 自适应学习
+- **结构**: 规则引擎启发式评分 + LLM评分（可选）
+- **测试状态**: ✅ 核心逻辑完整：
+  - 评分算法：基于词数、高级词汇、复杂短语、句子长度
+  - Skill Progress追踪：total_turns、error_frequency、improvement_trajectory
+  - 自适应难度：连续高分→提升，连续低分→降低
+  - Loop Training：低分(Command)路由回conversation重练
+- **关键常量**: `DIFFICULTY_UP_THRESHOLD=7.5`, `DIFFICULTY_DOWN_THRESHOLD=4.5`
+
+### LLM Client (`llm_client.py`)
+- **功能**: 统一OpenAI/Anthropic/Groq调用接口
+- **结构**: provider分发 + 结构化JSON输出 + safe_llm_call回退
+- **测试状态**: ✅ 代码结构完整，需API Key才能实际调用
+- **关键函数**: `call_llm()`文本, `call_llm_json()`结构化, `safe_llm_call()`带fallback
+
+### Graph Builder (`graph_builder.py`)
+- **功能**: 组装4个Node成StateGraph有向图 + Checkpointer管理
+- **结构**: StateGraph注册 + 边定义 + SQLite/MemorySaver双模式
+- **测试状态**: ✅ 图构建逻辑正确，lifespan管理SQLite连接生命周期
+- **关键流程**: scenario → conversation → correction → scoring → END
+
+### ASR Service (`asr.py`)
+- **功能**: 语音转文本（Speech to Text）
+- **结构**: OpenAI Whisper API + mock 回退
+- **测试状态**: ✅ 代码结构完整，需API Key才能实际调用
+- **关键函数**: `transcribe_audio()`, `detect_language()`
+
+### TTS Service (`tts.py`)
+- **功能**: 文本转语音（Text to Speech）
+- **结构**: OpenAI TTS API + mock 回退
+- **测试状态**: ✅ 代码结构完整，支持 6 种声音、语速调节
+- **关键函数**: `synthesize_speech()`, `synthesize_batch()`, `synthesize_speech_to_url()`
+
+### 支撑模块
+- **state.py**: `EnglishTutorState` TypedDict定义，自定义`_append_messages` reducer
+- **scenarios.py**: 5场景×3难度JSON配置（面试/点餐/旅行/会议/日常）
+- **prompts_loader.py**: 从`prompts/*.txt`加载模板，{{variable}}替换
+- **utils.py**: `extract_latest_user_input`兼容LangGraph 1.x BaseMessage
+
+### 整体评估
+| 维度 | 状态 | 说明 |
+|------|------|------|
+| 代码结构 | ✅ 优秀 | Node零耦合，State唯一数据载体 |
+| 容错机制 | ✅ 完善 | LLM失败→mock回退，SQLite失败→MemorySaver |
+| 可维护性 | ✅ 良好 | Prompt与代码分离，配置JSON驱动 |
+| 测试覆盖 | ✅ 良好 | 82个单元测试全部通过 |
+| 生产就绪 | 🟡 基本就绪 | 需配置.env API Key后完整测试 |
 
 ---
 
 ## 已知问题记录
-
+遇到问题请记录在development_issues中并解决
 详见 [DEVELOPMENT_ISSUES.md](DEVELOPMENT_ISSUES.md)
 
-### 已知问题（已降级）
+### 已知问题（已修复）
 
 | 问题 | 状态 | 说明 |
 |------|------|------|
-| LLM 评分/纠错通道 | 🟡 已修复 | `_extract_latest_user_input` 已统一为 `agents/utils.py` 公共函数，兼容 LangGraph 1.x BaseMessage |
-| Pydantic Config 弃用 | 🟢 已修复 | 升级为 `SettingsConfigDict` |
-| SQLite Checkpointer | 🟡 降级 | LangGraph 1.x 中 `SqliteSaver.from_conn_string()` 返回 context manager，默认回退到 `InMemorySaver`。如需 SQLite 持久化请使用 `demo_checkpoint.py` 手动管理 |
+| LLM 评分/纠错通道 | ✅ 已修复 | `_extract_latest_user_input` 已统一为 `agents/utils.py` 公共函数，兼容 LangGraph 1.x BaseMessage |
+| Pydantic Config 弃用 | ✅ 已修复 | 升级为 `SettingsConfigDict` |
+| SQLite Checkpointer | ✅ 已修复 | Stage 9c 手动管理 aiosqlite 连接生命周期 |
+| LangGraph 1.x add_messages reducer | ✅ 已修复 | scoring_node 优先从 `correction.original` 获取用户输入 |
 
 ---
 

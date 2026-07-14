@@ -36,11 +36,14 @@ class Settings(BaseSettings):
     groq_model: str = "qwen-2.5-7b"
 
     # === 服务配置 ===
-    # ASR (语音转文本) - 预留
-    asr_provider: str = "openai_whisper"
+    # ASR (语音转文本) - OpenAI Whisper
+    asr_enabled: bool = False
+    asr_language: str = "en"
 
-    # TTS (文本转语音) - 预留
-    tts_provider: str = "openai_tts"
+    # TTS (文本转语音) - OpenAI TTS
+    tts_enabled: bool = False
+    tts_voice: str = "alloy"
+    tts_speed: float = 1.0
 
     # === 应用配置 ===
     app_host: str = "0.0.0.0"

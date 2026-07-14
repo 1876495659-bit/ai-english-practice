@@ -21,6 +21,7 @@
 - **自适应学习**：skill_progress 追踪 + 难度自动调整 + Loop Training
 - **会话持久化**：SQLite Checkpoint（AsyncSqliteSaver），支持进程重启恢复
 - **多 LLM 支持**：OpenAI / Anthropic / Groq，细粒度开关控制
+- **语音功能**：ASR（OpenAI Whisper）+ TTS（OpenAI TTS），支持语音输入输出
 
 ## 项目结构
 
@@ -85,7 +86,24 @@ streamlit run ui/main.py --server.port 8501
 
 # 访问 API 文档
 # http://localhost:8000/docs
+
+## Docker 部署
+
+```bash
+# 构建并启动所有服务
+docker-compose up --build -d
+
+# 查看日志
+docker-compose logs -f api
+
+# 停止服务
+docker-compose down
+
+# 单独启动 API 服务
+docker build -t ai-english-tutor .
+docker run -p 8000:8000 --env-file .env ai-english-tutor
 ```
+
 
 ## API 接口
 
@@ -114,4 +132,10 @@ streamlit run ui/main.py --server.port 8501
 - [x] LangGraph 1.x 兼容修复（`extract_latest_user_input` 处理 BaseMessage + InMemorySaver）
 - [x] Pydantic v2 配置升级（`SettingsConfigDict`）
 - [x] SQLite Checkpointer 回退策略完善
-- [ ] ASR/TTS 集成
+- [x] ASR/TTS 集成（OpenAI Whisper + OpenAI TTS，含 API 端点）
+- [x] API 输入验证增强（场景/难度/水平校验、消息长度限制、全局异常处理）
+- [x] 场景 mock 回复扩展（5 场景 × 10 轮）
+- [x] 配置向导脚本（`setup.py`）
+- [x] Docker 部署支持（Dockerfile + docker-compose.yml）
+- [x] .env.example 更新（ASR/TTS 配置项）
+- [x] Stage 9e：Web UI 完整语音集成（🎤 录音→ASR 自动转写、🔊 TTS 播放、侧边栏语音设置）

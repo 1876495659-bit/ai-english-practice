@@ -80,6 +80,48 @@
 
 ---
 
+## Stage 9e 修复记录（2026-07-13）
+
+### Bug 7: chat_input 重复 placeholder 参数导致 TypeError ✅ 已修复
+- **现象**：Streamlit 报错 `TypeError: ChatMixin.chat_input() got multiple values for argument 'placeholder'`
+- **原因**：`col_input.chat_input("", placeholder="...", key="chat_input")` 第一个位置参数就是 placeholder，又传了同名关键字参数，导致重复
+- **修复**：去掉位置参数空字符串，只保留 `col_input.chat_input(placeholder="输入英语或语音识别后发送", key="chat_input")`
+- **影响文件**：`ui/main.py` L824
+
+---
+
+## Stage 9e 已知问题（待修复）
+
+### Bug 8: 语音识别（ASR）结果无法回传到 Streamlit 输入框 ✅ 已修复
+- **现象**：用户点击 🎤 录音 → 说话 → 点击 ⏹️ 停止 → ASR 返回文本 → 但文本**不会出现在输入框中也不会自动发送**
+- **根因分析**：
+  1. 录音 JS 在 `st.components.v1.html` iframe 中执行，ASR 结果通过 `window.history.replaceState` 修改 URL query params
+  2. Streamlit 的 `st.query_params.get("asr")` **只能读取页面初始加载时的 URL**，JS 修改 URL 后不会触发 Streamlit 重新读取
+  3. 核心问题：**Streamlit 的 query_params 是服务端读取的，JS 修改前端 URL 不会被服务端感知**
+- **修复方案**：改为两步交互 + URL 刷新机制
+  - 录音完成后 iframe 内通过 `window.top.location.href = url` **刷新整个页面**（携带 ASR 结果作为 query param）
+  - Streamlit 服务端在页面刷新后读取 `st.query_params.get("_asr_result")`
+  - 将结果存入 `st.session_state.asr_pending_text` 并在输入框上方显示蓝色卡片
+  - 用户点击 "✓ 发送" 或 "✗ 清除" 按钮确认/丢弃
+  - 发送时调用 `client.chat()` 走完整的 conversation → correction → scoring 流程
+- **状态**：✅ 已修复（待浏览器端测试）
+- **优先级**：高
+
+### Bug 9: AI 回复不走 LangGraph 自适应学习（评分为空） ✅ 已修复
+- **现象**：每轮 chat 请求 turn 始终为 1，AI 回复始终是固定开场白，skill_progress 为空
+- **根因分析**：
+  1. `AsyncSqliteSaver` 的 `list()` 是异步操作，原代码用同步 `list()` 调用导致静默失败
+  2. 恢复失败后走 `_make_initial_state()` 创建全新状态，turn 从 0 开始
+  3. 每次请求都创建新状态 → 没有对话上下文
+- **修复**：
+  1. 将 `graph.checkpointer.list()` 改为 `graph.checkpointer.alist()`（异步）
+  2. 使用 `graph.aget_state(config)` 获取当前状态（LangGraph 内置异步方法）
+  3. 从 checkpoint 恢复状态后更新 turn/messages，再传给 `ainvoke()`
+  4. 简化 `_is_session_active()` 为检查 `_sessions` 字典
+- **验证**：三轮对话 turn=1 → 2 → 3，AI 回复逐轮变化
+
+---
+
 ## Stage 9 修复记录（2026-07-10）
 
 ### Bug 5: correction_node.py 孤立 return 死代码块（L249-263）✅ 已修复

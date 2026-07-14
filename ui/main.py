@@ -14,6 +14,7 @@ AI 英语口语陪练系统 - 主界面 (Streamlit)
 from __future__ import annotations
 
 import sys
+import urllib.parse
 from pathlib import Path
 
 import streamlit as st
@@ -435,6 +436,20 @@ def _init_session_state() -> None:
         st.session_state.scenario_name = ""
     if "api_connected" not in st.session_state:
         st.session_state.api_connected = False
+    # 语音相关状态
+    if "is_recording" not in st.session_state:
+        st.session_state.is_recording = False
+    if "tts_audio_url" not in st.session_state:
+        st.session_state.tts_audio_url = ""
+    if "asr_pending_text" not in st.session_state:
+        st.session_state.asr_pending_text = ""
+    if "asr_pending_confirmed" not in st.session_state:
+        st.session_state.asr_pending_confirmed = False
+    # 语音设置
+    if "tts_voice" not in st.session_state:
+        st.session_state.tts_voice = "alloy"
+    if "tts_speed" not in st.session_state:
+        st.session_state.tts_speed = 1.0
 
 
 _init_session_state()
@@ -563,6 +578,53 @@ with st.sidebar:
 
     st.markdown("---")
 
+    # 语音设置
+    st.markdown("**🔊 语音设置**")
+
+    # TTS 声音选择
+    voices_resp = {}
+    try:
+        voices_resp = st.session_state.client.get_voices()
+    except Exception:
+        pass
+
+    voice_options = voices_resp.get("voices", [
+        {"name": "alloy", "description": "中性"},
+        {"name": "nova", "description": "女声"},
+        {"name": "echo", "description": "男声"},
+        {"name": "fable", "description": "英式"},
+        {"name": "onyx", "description": "沉稳"},
+        {"name": "shimmer", "description": "轻快"},
+    ])
+    voice_labels = [f"{v['name']} ({v.get('description', '')})" for v in voice_options]
+    voice_names = [v["name"] for v in voice_options]
+
+    current_voice_idx = voice_names.index(st.session_state.tts_voice) if st.session_state.tts_voice in voice_names else 0
+
+    selected_voice = st.selectbox(
+        "TTS 声音",
+        options=voice_labels,
+        index=current_voice_idx,
+        key="tts_voice_select",
+    )
+    # 同步选择结果
+    sel_idx = voice_labels.index(selected_voice) if selected_voice in voice_labels else 0
+    st.session_state.tts_voice = voice_names[sel_idx]
+
+    # TTS 语速滑块
+    st.slider(
+        "语速",
+        min_value=0.5,
+        max_value=2.0,
+        value=st.session_state.tts_speed,
+        step=0.1,
+        key="tts_speed_slider",
+        help="0.5 = 慢速, 1.0 = 正常, 2.0 = 快速",
+    )
+    st.session_state.tts_speed = st.session_state.tts_speed_slider
+
+    st.markdown("---")
+
     # 会话控制
     st.markdown("**🎮 会话控制**")
     col_start, col_new = st.columns(2)
@@ -650,7 +712,7 @@ if not st.session_state.session_active:
     """, unsafe_allow_html=True)
 else:
     # 消息历史
-    for msg in st.session_state.messages:
+    for idx, msg in enumerate(st.session_state.messages):
         if msg["role"] == "opening":
             st.markdown(
                 f'<div class="msg-opening">🤖 <b>{st.session_state.scenario_name}</b>：{msg["content"]}</div>',
@@ -659,7 +721,17 @@ else:
         elif msg["role"] == "user":
             st.markdown(f'<div class="msg-user">🙋 {msg["content"]}</div>', unsafe_allow_html=True)
         elif msg["role"] == "ai":
-            st.markdown(f'<div class="msg-ai">🤖 {msg["content"]}</div>', unsafe_allow_html=True)
+            # 生成唯一 ID 用于 TTS 播放控制
+            msg_id = f"msg_{idx}"
+            st.markdown(
+                f'<div class="msg-ai" id="{msg_id}">'
+                f'<span id="{msg_id}_text">🤖 {msg["content"]}</span>'
+                f'<button id="{msg_id}_play" onclick="playTTS(this, \'{msg_id}\')" '
+                f'style="float:right;background:none;border:none;color:#64748b;cursor:pointer;font-size:16px;" '
+                f'title="播放语音">🔊</button>'
+                f'</div>',
+                unsafe_allow_html=True,
+            )
             # 纠错信息
             corr = msg.get("correction")
             if corr and corr.get("has_errors"):
@@ -680,10 +752,149 @@ else:
 
     # 输入框
     st.markdown('<div class="chat-input-area">', unsafe_allow_html=True)
-    user_input = st.chat_input("请输入英语消息...", key="chat_input")
+
+    # 显示 ASR 识别结果（如果有待确认的文本）
+    asr_pending = st.session_state.get("asr_pending_text", "")
+    if asr_pending:
+        st.markdown(
+            f'<div style="background:#1e3a5f;border:1px solid #3b82f6;border-radius:10px;padding:10px 14px;margin-bottom:10px;font-size:13px;">'
+            f'🎤 <b style="color:#93c5fd;">语音识别：</b><span style="color:#e2e8f0;">{asr_pending}</span></div>',
+            unsafe_allow_html=True,
+        )
+        # 发送/清除按钮
+        col_asr_send, col_asr_clear = st.columns(2)
+        with col_asr_send:
+            if st.button("✓ 发送", use_container_width=True, type="primary"):
+                st.session_state.asr_pending_confirmed = True
+                st.session_state._asr_pending_text = asr_pending
+                st.session_state.asr_pending_text = ""
+                st.rerun()
+        with col_asr_clear:
+            if st.button("✗ 清除", use_container_width=True, type="secondary"):
+                st.session_state.asr_pending_text = ""
+                st.rerun()
+
+    # 语音输入按钮
+    col_input, col_voice = st.columns([4, 1])
+    with col_voice:
+        if not st.session_state.is_recording:
+            if st.button("🎤", use_container_width=True, type="primary"):
+                try:
+                    st.session_state.is_recording = True
+                    st.toast("🎤 正在录音，请说话...", icon="🎤")
+                    st.components.v1.html("""
+<script>
+let mediaRecorder = null;
+let audioChunks = [];
+
+async function startRecording() {
+    try {
+        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaRecorder = new MediaRecorder(stream);
+        audioChunks = [];
+        mediaRecorder.ondataavailable = (e) => { audioChunks.push(e.data); };
+        mediaRecorder.onstop = async () => {
+            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+            const formData = new FormData();
+            formData.append('file', audioBlob, 'audio.webm');
+            formData.append('language', 'en');
+            try {
+                const response = await fetch('/api/asr/transcribe', { method: 'POST', body: formData });
+                const result = await response.json();
+                if (result.status === 'success' && result.text) {
+                    const url = new URL(window.location.href);
+                    url.searchParams.set('_asr_result', result.text);
+                    window.top.location.href = url.toString();
+                } else {
+                    alert('识别失败: ' + (result.detail || '未知错误'));
+                }
+            } catch (err) {
+                alert('ASR 请求失败: ' + err.message);
+            }
+            stream.getTracks().forEach(track => track.stop());
+        };
+        mediaRecorder.start();
+    } catch (err) {
+        alert('无法访问麦克风: ' + err.message);
+    }
+}
+
+function stopRecording() {
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+    }
+}
+
+window.startRecording = startRecording;
+window.stopRecording = stopRecording;
+startRecording();
+</script>
+""", height=0)
+                except Exception as e:
+                    st.error(f"录音启动失败：{e}")
+        else:
+            if st.button("⏹️ 停止", use_container_width=True, type="secondary"):
+                try:
+                    st.session_state.is_recording = False
+                    st.toast("⏹️ 录音已停止，正在识别...", icon="⏹️")
+                    st.components.v1.html("""
+<script>
+window.stopRecording();
+</script>
+""", height=0)
+                except Exception as e:
+                    st.error(f"录音停止失败：{e}")
+
+    user_input = col_input.chat_input("", placeholder="输入英语或语音识别后发送", key="chat_input")
     st.markdown("</div>", unsafe_allow_html=True)
 
-    # 处理发送
+    # 处理 ASR 结果 — 通过 query_params 接收（JS 刷新页面后 Streamlit 读取）
+    asr_param = st.query_params.get("_asr_result", "")
+    if asr_param:
+        st.session_state.asr_pending_text = urllib.parse.unquote(asr_param)
+        st.rerun()
+
+    # 处理 ASR 确认发送
+    if st.session_state.get("asr_pending_confirmed", False):
+        asr_text = st.session_state.get("_asr_pending_text", "")
+        st.session_state.asr_pending_confirmed = False
+        st.session_state._asr_pending_text = ""
+        if asr_text and asr_text.strip():
+            try:
+                resp = st.session_state.client.chat(message=asr_text.strip())
+                ai_reply = resp.get("ai_reply", "")
+                correction = resp.get("correction")
+                score = resp.get("score")
+                skill_progress = resp.get("skill_progress")
+                turn = resp.get("turn", 0)
+                retry_count = resp.get("retry_count", 0)
+                difficulty = resp.get("difficulty", "medium")
+
+                st.session_state.turn = turn
+                st.session_state.retry_count = retry_count
+                st.session_state.last_score = score
+                st.session_state.last_correction = correction
+                st.session_state.skill_progress = skill_progress
+                st.session_state.difficulty = difficulty
+
+                st.session_state.messages.append({
+                    "role": "user",
+                    "content": asr_text.strip(),
+                    "correction": correction,
+                    "score": score,
+                })
+                st.session_state.messages.append({
+                    "role": "ai",
+                    "content": ai_reply,
+                    "correction": correction,
+                    "score": score,
+                })
+                st.toast("✅ 语音识别成功并已发送", icon="🎤")
+                st.rerun()
+            except Exception as e:
+                st.error(f"语音发送失败：{e}")
+
+    # 处理文本输入发送
     if user_input and user_input.strip():
         try:
             resp = st.session_state.client.chat(message=user_input.strip())
@@ -720,6 +931,71 @@ else:
 
         except Exception as e:
             st.error(f"发送失败：{e}")
+
+    # TTS 播放 JavaScript — 调用后端合成音频并播放
+    st.components.v1.html(f"""
+<script>
+const _ttsVoice = "{st.session_state.tts_voice}";
+const _ttsSpeed = {st.session_state.tts_speed};
+let currentAudio = null;
+
+async function playTTS(btn, msgId) {{
+    // 查找该消息的纯文本内容
+    const msgEl = document.getElementById(msgId + '_text');
+    if (!msgEl) return;
+    let text = msgEl.textContent.replace(/^🤖\\s*/, '').trim();
+    if (!text) return;
+
+    // 如果正在播放同一条，则停止
+    if (currentAudio && currentAudio.dataset.msgId === msgId) {{
+        currentAudio.pause();
+        currentAudio = null;
+        btn.innerHTML = '🔊';
+        return;
+    }}
+
+    // 停止之前的播放
+    if (currentAudio) {{
+        currentAudio.pause();
+        currentAudio = null;
+    }}
+
+    btn.innerHTML = '⏳';
+    btn.disabled = true;
+
+    try {{
+        const resp = await fetch('/api/tts/synthesize', {{
+            method: 'POST',
+            headers: {{ 'Content-Type': 'application/json' }},
+            body: JSON.stringify({{
+                text: text,
+                voice: _ttsVoice,
+                speed: _ttsSpeed,
+            }}),
+        }});
+        const data = await resp.json();
+        if (data.status === 'success' && data.audio_base64) {{
+            currentAudio = new Audio('data:audio/wav;base64,' + data.audio_base64);
+            currentAudio.dataset.msgId = msgId;
+            currentAudio.onended = () => {{
+                btn.innerHTML = '🔊';
+                btn.disabled = false;
+                currentAudio = null;
+            }};
+            await currentAudio.play();
+        }} else {{
+            btn.innerHTML = '🔊';
+            btn.disabled = false;
+            alert('TTS 合成失败: ' + (data.detail || '未知错误'));
+        }}
+    }} catch (err) {{
+        btn.innerHTML = '🔊';
+        btn.disabled = false;
+        console.error('TTS 请求失败:', err);
+    }}
+}}
+</script>
+""", height=0)
 
 # ============================================================================
 # 底部 — 三栏面板
