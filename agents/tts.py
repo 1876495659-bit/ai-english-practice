@@ -82,8 +82,7 @@ async def synthesize_speech(
         pass
 
     try:
-        import openai
-        from openai import OpenAI as AsyncOpenAI
+        from openai import AsyncOpenAI
 
         client = AsyncOpenAI(api_key=api_key or None)
 

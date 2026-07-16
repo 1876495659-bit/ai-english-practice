@@ -16,7 +16,9 @@ langgraph-checkpoint-sqlite>=2.0.1
 # Testing
 pytest>=8.0
 pytest-asyncio>=0.23
-httpx>=0.27.0
 
 # Dev tools
 ruff>=0.4.0
+
+# WebSocket client (for Streamlit UI)
+websockets>=12.0

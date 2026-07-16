@@ -7,7 +7,8 @@
 import pytest
 from agents.conversation_node import (
     _build_conversation_history,
-    _mock_reply,
+    _fallback_static_reply,
+    _smart_mock_reply,
 )
 
 
@@ -79,57 +80,136 @@ class TestBuildConversationHistory:
         assert len(result) == 3
 
 
-class TestMockReply:
-    """测试 _mock_reply 函数"""
+class TestFallbackStaticReply:
+    """测试 _fallback_static_reply 函数（原始静态字典兜底）"""
 
     def test_interview_turn_1(self):
         """面试场景第 1 轮回复"""
-        result = _mock_reply("interview", 1)
+        result = _fallback_static_reply("interview", 1)
         assert "Good morning" in result
         assert "yourself" in result.lower() or "自己" in result
 
     def test_interview_turn_2(self):
         """面试场景第 2 轮回复"""
-        result = _mock_reply("interview", 2)
+        result = _fallback_static_reply("interview", 2)
         assert "impressive" in result or "自豪" in result
 
     def test_restaurant_turn_1(self):
         """餐厅场景第 1 轮回复"""
-        result = _mock_reply("restaurant", 1)
+        result = _fallback_static_reply("restaurant", 1)
         assert "Welcome" in result or "欢迎来到" in result
 
     def test_travel_turn_1(self):
         """旅行场景第 1 轮回复"""
-        result = _mock_reply("travel", 1)
+        result = _fallback_static_reply("travel", 1)
         assert "visiting" in result.lower() or "旅游" in result
 
     def test_meeting_turn_1(self):
         """会议场景第 1 轮回复"""
-        result = _mock_reply("meeting", 1)
+        result = _fallback_static_reply("meeting", 1)
         assert "morning" in result.lower() or "开始" in result
 
     def test_daily_turn_1(self):
         """日常场景第 1 轮回复"""
-        result = _mock_reply("daily", 1)
+        result = _fallback_static_reply("daily", 1)
         assert "day" in result.lower() or "今天" in result
 
     def test_unknown_scenario_fallback_to_daily(self):
         """未知场景回退到 daily"""
-        result = _mock_reply("nonexistent", 1)
+        result = _fallback_static_reply("nonexistent", 1)
         assert result is not None
         assert len(result) > 0
 
     def test_turn_exceeds_max_index(self):
         """turn 超出最大索引时使用最后一个回复"""
-        result = _mock_reply("daily", 100)
+        result = _fallback_static_reply("daily", 100)
         assert result is not None
         assert len(result) > 0
 
     def test_all_scenarios_have_replies(self):
-        """所有场景都有对应的 mock 回复"""
+        """所有场景都有对应的 fallback 回复"""
         scenarios = ["interview", "restaurant", "travel", "meeting", "daily"]
         for scenario in scenarios:
             for turn in range(1, 4):
-                result = _mock_reply(scenario, turn)
+                result = _fallback_static_reply(scenario, turn)
                 assert isinstance(result, str)
                 assert len(result) > 0
+
+
+class TestSmartMockReply:
+    """测试 _smart_mock_reply 函数（基于关键词的智能回复）"""
+
+    def test_greeting_recognized(self):
+        """问候类输入应被识别并生成相关回复"""
+        result = _smart_mock_reply("daily", 1, "hello")
+        assert isinstance(result, str)
+        assert len(result) > 0
+        # 应包含问候相关的回应
+        lower = result.lower()
+        assert any(word in lower for word in ["hello", "hi", "hey", "你好", "好"])
+
+    def test_how_are_you_recognized(self):
+        """近况类输入应被识别"""
+        result = _smart_mock_reply("daily", 1, "how are you")
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_activity_keywords(self):
+        """活动类关键词应触发活动相关回复"""
+        result = _smart_mock_reply("daily", 1, "I like playing basketball")
+        assert isinstance(result, str)
+        assert len(result) > 0
+        # 应包含对活动的回应
+        lower = result.lower()
+        assert any(word in lower for word in ["fun", "great", "nice", "兴趣", "活动", "运动"])
+
+    def test_work_study_keywords(self):
+        """工作/学习类关键词应触发相关回复"""
+        result = _smart_mock_reply("daily", 1, "I study at university")
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_food_keywords(self):
+        """食物类关键词应触发相关回复"""
+        result = _smart_mock_reply("daily", 1, "I love eating sushi")
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_empty_input_uses_fallback(self):
+        """空输入使用兜底静态回复"""
+        result = _smart_mock_reply("daily", 1, "")
+        assert isinstance(result, str)
+        assert len(result) > 0
+        # 空输入应走 _fallback_static_reply 逻辑
+        expected = _fallback_static_reply("daily", 1)
+        assert result == expected
+
+    def test_long_input_gets_detailed_response(self):
+        """长输入应获得更详细的回应"""
+        long_text = "I really enjoy reading books about history and science fiction novels on weekends"
+        result = _smart_mock_reply("daily", 1, long_text)
+        assert isinstance(result, str)
+        assert len(result) > 50  # 应有更多细节
+
+    def test_short_input_encourages_more(self):
+        """短输入应鼓励用户多说"""
+        short_text = "yes"
+        result = _smart_mock_reply("daily", 1, short_text)
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_scenario_specific_guide(self):
+        """不同场景应给出场景相关的引导"""
+        interview_result = _smart_mock_reply("interview", 1, "hello")
+        restaurant_result = _smart_mock_reply("restaurant", 1, "hello")
+        # 两者都应是有意义的回复
+        assert len(interview_result) > 0
+        assert len(restaurant_result) > 0
+
+    def test_all_scenarios_with_smart_mock(self):
+        """所有场景都支持智能 mock 回复"""
+        scenarios = ["interview", "restaurant", "travel", "meeting", "daily"]
+        for scenario in scenarios:
+            result = _smart_mock_reply(scenario, 1, "hello")
+            assert isinstance(result, str)
+            assert len(result) > 0

@@ -85,6 +85,7 @@ async def scoring_node(state: dict[str, Any]) -> dict[str, Any] | Any:
     # LangGraph 1.x 消息管理策略：
     # 由于 checkpoint 不保留大部分字段（如 user_input），
     # 优先从 correction.original 获取（correction_node 已成功提取并持久化）
+    user_input = ""
     correction = state.get("correction", {})
     if isinstance(correction, dict):
         user_input = correction.get("original", "").strip()

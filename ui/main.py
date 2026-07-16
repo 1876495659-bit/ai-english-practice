@@ -782,48 +782,52 @@ else:
                 try:
                     st.session_state.is_recording = True
                     st.toast("🎤 正在录音，请说话...", icon="🎤")
-                    st.components.v1.html("""
+                    # 将 API base URL 注入 JS 上下文，避免相对路径解析到错误端口
+                    api_base = st.session_state.client.base_url
+                    st.components.v1.html(f"""
 <script>
 let mediaRecorder = null;
 let audioChunks = [];
+const _apiBase = "{api_base}";
 
-async function startRecording() {
-    try {
-        const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+async function startRecording() {{
+    try {{
+        const stream = await navigator.mediaDevices.getUserMedia({{ audio: true }});
         mediaRecorder = new MediaRecorder(stream);
         audioChunks = [];
-        mediaRecorder.ondataavailable = (e) => { audioChunks.push(e.data); };
-        mediaRecorder.onstop = async () => {
-            const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        mediaRecorder.ondataavailable = (e) => {{ audioChunks.push(e.data); }};
+        mediaRecorder.onstop = async () => {{
+            const audioBlob = new Blob(audioChunks, {{ type: 'audio/webm' }});
             const formData = new FormData();
             formData.append('file', audioBlob, 'audio.webm');
             formData.append('language', 'en');
-            try {
-                const response = await fetch('/api/asr/transcribe', { method: 'POST', body: formData });
+            try {{
+                const response = await fetch(_apiBase + '/api/asr/transcribe', {{ method: 'POST', body: formData }});
                 const result = await response.json();
-                if (result.status === 'success' && result.text) {
-                    const url = new URL(window.location.href);
+                if (result.status === 'success' && result.text) {{
+                    // 通过 window.parent 刷新 Streamlit iframe 的 URL
+                    const url = new URL(window.parent.location.href);
                     url.searchParams.set('_asr_result', result.text);
-                    window.top.location.href = url.toString();
-                } else {
+                    window.parent.location.href = url.toString();
+                }} else {{
                     alert('识别失败: ' + (result.detail || '未知错误'));
-                }
-            } catch (err) {
+                }}
+            }} catch (err) {{
                 alert('ASR 请求失败: ' + err.message);
-            }
+            }}
             stream.getTracks().forEach(track => track.stop());
-        };
+        }};
         mediaRecorder.start();
-    } catch (err) {
+    }} catch (err) {{
         alert('无法访问麦克风: ' + err.message);
-    }
-}
+    }}
+}}
 
-function stopRecording() {
-    if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+function stopRecording() {{
+    if (mediaRecorder && mediaRecorder.state !== 'inactive') {{
         mediaRecorder.stop();
-    }
-}
+    }}
+}}
 
 window.startRecording = startRecording;
 window.stopRecording = stopRecording;
@@ -845,7 +849,7 @@ window.stopRecording();
                 except Exception as e:
                     st.error(f"录音停止失败：{e}")
 
-    user_input = col_input.chat_input("", placeholder="输入英语或语音识别后发送", key="chat_input")
+    user_input = col_input.chat_input(placeholder="输入英语或语音识别后发送", key="chat_input")
     st.markdown("</div>", unsafe_allow_html=True)
 
     # 处理 ASR 结果 — 通过 query_params 接收（JS 刷新页面后 Streamlit 读取）
@@ -933,8 +937,10 @@ window.stopRecording();
             st.error(f"发送失败：{e}")
 
     # TTS 播放 JavaScript — 调用后端合成音频并播放
+    api_base = st.session_state.client.base_url
     st.components.v1.html(f"""
 <script>
+const _apiBase = "{api_base}";
 const _ttsVoice = "{st.session_state.tts_voice}";
 const _ttsSpeed = {st.session_state.tts_speed};
 let currentAudio = null;
@@ -964,7 +970,7 @@ async function playTTS(btn, msgId) {{
     btn.disabled = true;
 
     try {{
-        const resp = await fetch('/api/tts/synthesize', {{
+        const resp = await fetch(_apiBase + '/api/tts/synthesize', {{
             method: 'POST',
             headers: {{ 'Content-Type': 'application/json' }},
             body: JSON.stringify({{

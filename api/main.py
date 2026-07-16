@@ -9,6 +9,7 @@ API 端点：
     GET  /api/session       - 获取当前会话状态（含 skill_progress）
     DELETE /api/session     - 删除会话（清理 checkpoint）
     POST /api/session/end   - 结束会话
+    WS   /ws/chat           - WebSocket 实时对话（逐 Node 事件推送）
     GET  /                  - 健康检查
 
 架构：LangGraph StateGraph + SQLite Checkpointer（Stage 6 - 持久化）
@@ -22,12 +23,14 @@ API 端点：
 
 from __future__ import annotations
 
+import json
 import logging
 from contextlib import asynccontextmanager
 from typing import Any, Optional
 
-from fastapi import FastAPI, HTTPException, Request, UploadFile, Form
+from fastapi import FastAPI, HTTPException, Request, UploadFile, Form, WebSocket
 from fastapi.exceptions import RequestValidationError
+from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
@@ -38,6 +41,8 @@ from agents.graph_builder import (
     reset_graph,
 )
 from agents.state import EnglishTutorState
+from api.sessions import get_or_create_session, make_initial_state, remove_session, list_sessions, get_active_session_ids
+from api.websocket import handle_chat_websocket
 
 logger = logging.getLogger(__name__)
 
@@ -98,6 +103,17 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# ============================================================================
+# CORS 中间件 — 允许 Streamlit 跨域请求到 FastAPI
+# ============================================================================
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 
 # ============================================================================
 # 全局异常处理器
@@ -133,7 +149,9 @@ async def general_exception_handler(request: Request, exc: Exception) -> JSONRes
     )
 
 
-# ========== 会话存储 ==========
+# ============================================================================
+# Pydantic 请求/响应模型
+# ============================================================================
 
 
 class StartSessionRequest(BaseModel):
@@ -209,81 +227,9 @@ class DeleteSessionResponse(BaseModel):
     session_id: str
 
 
-# ========== 会话存储 ==========
-
-# 内存映射：session_id -> thread_id
-# 实际状态由 LangGraph Checkpointer（SQLite）持久化
-_sessions: dict[str, str] = {}
-_next_session_id = 0
-
-
-def _get_or_create_session() -> tuple[str, str]:
-    """
-    获取或创建会话。
-
-    查找逻辑：
-    1. 遍历已注册的 session，检查对应 thread 是否有活跃状态
-    2. 如果找到活跃 session，直接返回
-    3. 否则创建新 session
-
-    Returns:
-        (session_id, thread_id) 对
-    """
-    global _next_session_id
-
-    # 查找活跃会话
-    for sid, tid in _sessions.items():
-        if _is_session_active(tid):
-            return sid, tid
-
-    # 创建新会话
-    _next_session_id += 1
-    session_id = f"session_{_next_session_id}"
-    thread_id = f"thread_{session_id}"
-    _sessions[session_id] = thread_id
-
-    logger.info(f"[Session] Created new session: {session_id} (thread_id={thread_id})")
-    return session_id, thread_id
-
-
-def _is_session_active(thread_id: str) -> bool:
-    """
-    检查某个 thread 是否有活跃状态。
-
-    简化逻辑：只要 _sessions 字典中有该 thread_id 的映射，
-    即认为会话活跃（实际状态由 LangGraph Checkpointer 管理）。
-    """
-    return thread_id in _sessions.values()
-
-
-def _make_initial_state() -> dict[str, Any]:
-    """创建初始状态"""
-    return {
-        "scenario": "daily",
-        "difficulty": "medium",
-        "level": "intermediate",
-        "scenario_goal": "提升日常英语交流的流利度和自然度",
-        "ai_reply": "",
-        "correction": {},
-        "score": {},
-        "metadata": {},
-        "turn": 0,
-        "retry_count": 0,
-        "max_retries": 3,
-        "session_active": True,
-        "messages": [],
-        "skill_progress": {
-            "total_turns": 0,
-            "avg_score": 0.0,
-            "error_frequency": {},
-            "weakest_dimension": "",
-            "strongest_dimension": "",
-            "improvement_trajectory": [],
-        },
-    }
-
-
-# ========== API 路由 ==========
+# ============================================================================
+# API 路由
+# ============================================================================
 
 
 @app.get("/")
@@ -320,7 +266,7 @@ async def start_session(request: StartSessionRequest) -> dict[str, Any]:
         opening_line: 场景开场白
         has_checkpoint: 是否启用了持久化
     """
-    session_id, thread_id = _get_or_create_session()
+    session_id, thread_id = get_or_create_session()
 
     # 构建初始状态（使用验证后的值）
     initial_state: EnglishTutorState = {
@@ -395,7 +341,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
         - 连续高分 → 自动提升难度
         - 连续低分 → 自动降低难度
     """
-    session_id, thread_id = _get_or_create_session()
+    session_id, thread_id = get_or_create_session()
 
     if not thread_id:
         raise HTTPException(status_code=400, detail="No active session")
@@ -408,7 +354,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
     try:
         validated_msg = request.validated_message
     except ValueError as e:
-        raise HTTPException(status_code=400, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e))
 
     # 先获取当前状态（从 checkpoint 恢复）
     try:
@@ -423,7 +369,7 @@ async def chat(request: ChatRequest) -> ChatResponse:
 
     # 如果无法恢复，创建新状态
     if not current_state:
-        current_state = _make_initial_state()
+        current_state = make_initial_state()
         current_state["session_active"] = True
 
     # 更新用户输入和轮次
@@ -488,11 +434,11 @@ async def chat(request: ChatRequest) -> ChatResponse:
 @app.get("/api/session")
 async def get_session() -> dict[str, Any]:
     """获取当前会话状态"""
-    if not _sessions:
+    if not list_sessions():
         raise HTTPException(status_code=404, detail="No active session")
 
-    session_id = list(_sessions.keys())[0]
-    thread_id = _sessions[session_id]
+    session_id = get_active_session_ids()[0]
+    thread_id = list_sessions()[session_id]
     config = {"configurable": {"thread_id": thread_id}}
 
     # 尝试从 checkpointer 恢复最新状态
@@ -501,19 +447,15 @@ async def get_session() -> dict[str, Any]:
 
     if graph.checkpointer:
         try:
-            snapshots = [s async for s in graph.checkpointer.alist(config)]
-            if snapshots:
-                latest = snapshots[-1]
-                cv = None
-                if hasattr(latest, 'checkpoint') and latest.checkpoint:
-                    cv = latest.checkpoint.get('channel_values')
-                if cv is not None:
-                    state = dict(cv)
+            # 使用 aget_state 获取当前状态（与 chat 端点一致）
+            snapshot = await graph.aget_state(config)
+            if snapshot and snapshot.values:
+                state = dict(snapshot.values)
         except Exception as e:
             logger.warning(f"[Session] Failed to load state: {e}")
 
     if not state:
-        state = _make_initial_state()
+        state = make_initial_state()
 
     messages = state.get("messages", [])
     last_ai = ""
@@ -557,12 +499,12 @@ async def delete_session(session_id: str) -> DeleteSessionResponse:
     Returns:
         删除结果
     """
-    if session_id not in _sessions:
+    if session_id not in list_sessions():
         raise HTTPException(
             status_code=404, detail=f"Session {session_id} not found"
         )
 
-    thread_id = _sessions.pop(session_id)
+    thread_id = remove_session(session_id)
 
     # 尝试删除 checkpoint
     graph = get_graph()
@@ -586,11 +528,11 @@ async def delete_session(session_id: str) -> DeleteSessionResponse:
 @app.post("/api/session/end")
 async def end_session() -> dict[str, str]:
     """结束当前会话"""
-    if not _sessions:
+    if not list_sessions():
         raise HTTPException(status_code=404, detail="No active session")
 
-    session_id = list(_sessions.keys())[0]
-    thread_id = _sessions[session_id]
+    session_id = get_active_session_ids()[0]
+    thread_id = list_sessions()[session_id]
     config = {"configurable": {"thread_id": thread_id}}
 
     # 更新状态标记为不活跃
@@ -606,6 +548,50 @@ async def end_session() -> dict[str, str]:
             logger.warning(f"[Session] Failed to mark session inactive: {e}")
 
     return {"message": "Session ended"}
+
+
+# ============================================================================
+# WebSocket 实时对话端点
+# ============================================================================
+
+
+@app.websocket("/ws/chat")
+async def websocket_chat(websocket: WebSocket) -> None:
+    """
+    WebSocket 实时对话端点。
+
+    客户端发送 JSON 消息，服务端逐个执行 LangGraph Node 并推送事件：
+        - node_complete: 某个 Node 完成
+        - correction: 纠错结果
+        - score: 评分结果
+        - chat_complete: 完整对话完成
+        - error: 错误信息
+
+    用法：
+        ws = websockets.connect("ws://localhost:8000/ws/chat")
+        await ws.send(json.dumps({"type": "chat", "message": "Hello"}))
+        async for event in ws:
+            print(json.loads(event))
+    """
+    await websocket.accept()
+    try:
+        while True:
+            data = await websocket.receive_text()
+            payload = json.loads(data)
+            await handle_chat_websocket(websocket, payload)
+    except json.JSONDecodeError:
+        await websocket.send_json({"type": "error", "detail": "无效 JSON 格式"})
+    except Exception as e:
+        logger.error(f"[WebSocket] Error: {e}", exc_info=True)
+        try:
+            await websocket.send_json({"type": "error", "detail": str(e)})
+        except Exception:
+            pass
+    finally:
+        try:
+            await websocket.close()
+        except Exception:
+            pass
 
 
 # ============================================================================

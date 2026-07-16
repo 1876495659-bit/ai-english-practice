@@ -16,6 +16,8 @@ ENV/
 
 # Project
 *.db
+*.db-shm
+*.db-wal
 logs/
 .env
 .env.local

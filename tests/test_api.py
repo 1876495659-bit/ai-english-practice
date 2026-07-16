@@ -8,18 +8,17 @@
 import pytest
 from fastapi.testclient import TestClient
 
-from api.main import app, _sessions, _next_session_id
+from api.main import app
+import api.sessions as _session_mod
 
 
 @pytest.fixture(autouse=True)
 def _reset_api_state():
     """每个测试前后清理会话状态"""
-    global _sessions, _next_session_id
-    _sessions.clear()
-    _next_session_id = 0
+    _session_mod._sessions.clear()
+    _session_mod._next_session_id = 0
     yield
-    _sessions.clear()
-    _next_session_id = 0
+    _session_mod._sessions.clear()
 
 
 @pytest.fixture
@@ -84,8 +83,8 @@ class TestStartSession:
             "/api/session/start",
             json={"scenario": "restaurant"},
         )
-        assert len(_sessions) == 1
-        session_id = list(_sessions.keys())[0]
+        assert len(_session_mod._sessions) == 1
+        session_id = list(_session_mod._sessions.keys())[0]
         assert session_id.startswith("session_")
 
 
@@ -181,7 +180,7 @@ class TestDeleteSession:
     def test_delete_existing(self, client):
         """删除已存在的会话应返回成功"""
         client.post("/api/session/start", json={})
-        session_id = list(_sessions.keys())[0]
+        session_id = list(_session_mod._sessions.keys())[0]
         resp = client.delete(f"/api/session/{session_id}")
         assert resp.status_code == 200
         data = resp.json()

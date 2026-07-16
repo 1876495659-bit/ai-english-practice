@@ -110,6 +110,9 @@ async def _call_openai(
         if response_format:
             kwargs["response_format"] = response_format
 
+        # Ollama 本地模型响应较慢，增加超时时间
+        import httpx
+        client.timeout = httpx.Timeout(120.0)
         response = await client.chat.completions.create(**kwargs)
         content = response.choices[0].message.content
         if not content:

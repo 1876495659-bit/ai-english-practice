@@ -107,6 +107,19 @@ User Input → State → [scenario → conversation → correction → scoring] 
   - 使用 `graph.aget_state(config)` 替代手动解析 CheckpointTuple
   - 修复 `_is_session_active()` 避免同步/异步混用
   - 验证：三轮对话 turn=1→2→3，AI 回复逐轮变化，skill_progress 正常累积
+- ✅ Bug 10 修复：Q&A 不智能 + 语音无法识别（2026-07-15）
+  - **问题 1**：LLM 关闭时 `_mock_reply()` 是纯静态字典查找，完全不理解用户输入
+    - 修复：`conversation_node.py` — 新增 `_smart_mock_reply()` 基于关键词分类的动态回复引擎
+    - 支持 12+ 意图类别（问候/近况/喜好/活动/工作/食物/天气/感谢/道歉/告别/疑问等）
+    - 根据用户输入长度自适应：短句鼓励多说，长文给予详细回应
+    - 结合场景给出引导性回复（如面试场景引导专业表达）
+    - 原始静态字典保留为 `_fallback_static_reply()` 兜底
+  - **问题 2**：JS `fetch('/api/asr/transcribe')` 在 Streamlit iframe 内解析到 8501 端口而非 8000
+    - 修复：`ui/main.py` — 将 `st.session_state.client.base_url` 注入 ASR/TTS JS 上下文
+    - ASR: `fetch(_apiBase + '/api/asr/transcribe')`
+    - TTS: `fetch(_apiBase + '/api/tts/synthesize')`
+  - **问题 3**：FastAPI 缺少 CORS 中间件，跨域请求被浏览器拦截
+    - 修复：`api/main.py` — 添加 `CORSMiddleware` 允许所有来源（开发环境）
 
 ---
 

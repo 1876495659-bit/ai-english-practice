@@ -44,16 +44,19 @@ async def transcribe_audio(
     try:
         from config.settings import settings
         api_key = settings.openai_api_key
-        if not api_key or api_key.startswith("sk-your-key"):
-            logger.warning("[ASR] OpenAI API Key 未配置，返回 mock 文本")
-            return f"[Mock ASR] 检测到 {len(audio_data)} 字节的音频输入，请配置 API Key 以启用真实语音识别"
+        # 如果 API Key 是占位符、未配置或指向 Ollama（不支持 Whisper），走 mock
+        if (not api_key or
+            api_key.startswith("sk-your-key") or
+            api_key == "ollama" or
+            api_key.startswith("sk-ollama")):
+            logger.warning("[ASR] No real Whisper API available, using mock transcription")
+            return f"[Mock ASR] 检测到 {len(audio_data)} 字节的音频输入，请配置 OpenAI Whisper API Key 以启用真实语音识别"
     except Exception:
         pass
 
     # --- OpenAI Whisper API ---
     try:
-        import openai
-        from openai import OpenAI as AsyncOpenAI
+        from openai import AsyncOpenAI
 
         client = AsyncOpenAI(api_key=api_key or None)
 
@@ -85,9 +88,10 @@ def _mock_transcription(audio_data: bytes, language: str) -> str:
     lang_map = {"en": "English", "zh": "Chinese", "ja": "Japanese"}
     lang_name = lang_map.get(language, language)
     return (
-        f"[Mock ASR] {lang_name} speech detected from "
-        f"{len(audio_data)} bytes of audio data. "
-        f"This is a placeholder — configure OpenAI API Key for real transcription."
+        f"[语音识别暂不可用] 当前使用 Mock 模式。"
+        f"要启用真实语音识别，请在 .env 中配置 OpenAI Whisper API Key："
+        f"OPENAI_API_KEY=sk-your-openai-key\n\n"
+        f"检测到 {len(audio_data)} 字节 {lang_name} 音频数据。"
     )
 
 
@@ -104,14 +108,17 @@ async def detect_language(audio_data: bytes) -> str:
     try:
         from config.settings import settings
         api_key = getattr(settings, "openai_api_key", "")
-        if not api_key or api_key.startswith("sk-your-key"):
+        # 如果 API Key 是占位符、未配置或指向 Ollama，默认返回英语
+        if (not api_key or
+            api_key.startswith("sk-your-key") or
+            api_key == "ollama" or
+            api_key.startswith("sk-ollama")):
             return "en"
     except Exception:
         pass
 
     try:
-        import openai
-        from openai import OpenAI as AsyncOpenAI
+        from openai import AsyncOpenAI
 
         client = AsyncOpenAI(api_key=api_key)
         audio_file = io.BytesIO(audio_data)

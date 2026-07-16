@@ -2,14 +2,16 @@
 API Client - 前端与后端 FastAPI 的通信层
 
 封装所有后端 API 调用，提供类型安全的接口。
-支持：聊天、会话管理、ASR 语音转文本、TTS 文本转语音。
+支持：聊天、会话管理、ASR 语音转文本、TTS 文本转语音、WebSocket 实时对话。
 """
 
 from __future__ import annotations
 
 import base64
-import httpx
+import json
 from typing import Any, Optional
+
+import httpx
 
 
 class APIClient:
@@ -158,3 +160,52 @@ class APIClient:
             resp = client.get(f"{self.base_url}/api/tts/voices", timeout=10)
             resp.raise_for_status()
             return resp.json()
+
+
+# ========================================================================
+# WebSocket 客户端
+# ========================================================================
+
+
+class WSClient:
+    """WebSocket 客户端 — 用于实时对话事件流"""
+
+    def __init__(self, base_url: str = "http://localhost:8000"):
+        self.base_url = base_url.rstrip("/")
+        ws_scheme = "ws" if self.base_url.startswith("http://") else "wss"
+        host_port = self.base_url.replace("http://", "").replace("https://", "")
+        self.ws_url = f"{ws_scheme}://{host_port}/ws/chat"
+        self._ws = None
+
+    async def connect(self):
+        """建立 WebSocket 连接"""
+        try:
+            import websockets
+        except ImportError:
+            raise ImportError(
+                "websockets package not installed. Install with: pip install websockets"
+            )
+        self._ws = await websockets.connect(self.ws_url)
+
+    async def send_message(self, message: str) -> None:
+        """发送聊天消息"""
+        if not self._ws:
+            raise RuntimeError("Not connected. Call connect() first.")
+        await self._ws.send(json.dumps({"type": "chat", "message": message}))
+
+    async def receive_events(self):
+        """异步生成器，yield 每个事件"""
+        if not self._ws:
+            raise RuntimeError("Not connected. Call connect() first.")
+        async for raw in self._ws:
+            yield json.loads(raw)
+
+    async def close(self) -> None:
+        """关闭连接"""
+        if self._ws:
+            await self._ws.close()
+            self._ws = None
+
+    @property
+    def is_connected(self) -> bool:
+        return self._ws is not None
